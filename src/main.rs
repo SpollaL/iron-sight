@@ -1,5 +1,9 @@
-use std::env;
+use crossterm::event;
 use csv;
+use ratatui::layout::Constraint;
+use ratatui::widgets::{Cell, Row, Table, TableState};
+use ratatui::Frame;
+use std::env;
 
 struct Config {
     file_path: String,
@@ -18,18 +22,89 @@ impl Config {
     }
 }
 
-fn main() {
+struct App {
+    headers: Vec<String>,
+    records: Vec<Vec<String>>,
+    state: TableState,
+    shoudl_quit: bool,
+}
+
+impl App {
+    fn new(headers: Vec<String>, records: Vec<Vec<String>>) -> App {
+        App {
+            headers,
+            records,
+            state: TableState::default(),
+            shoudl_quit: false,
+        }
+    }
+}
+
+fn ui(frame: &mut Frame, app: &mut App) {
+    let header_cells = Row::new(app.headers.iter().map(|header| Cell::from(header.as_str())));
+    let rows = app
+        .records
+        .iter()
+        .map(|record| Row::new(record.iter().map(|field| Cell::from(field.as_str()))))
+        .collect::<Vec<Row>>();
+    let column_count = app.records.first().map_or(0, |record| record.len());
+    let widths = vec![Constraint::Length(15); column_count];
+    let table = Table::new(rows, widths).header(header_cells).block(
+        ratatui::widgets::Block::default()
+            .title("CSV Viewer")
+            .borders(ratatui::widgets::Borders::ALL),
+    );
+    frame.render_stateful_widget(table, frame.area(), &mut app.state);
+}
+
+fn run_app(
+    temrinal: &mut ratatui::DefaultTerminal,
+    mut app: App,
+) -> Result<(), Box<dyn std::error::Error>> {
+    while !app.shoudl_quit {
+        temrinal.draw(|frame| ui(frame, &mut app))?;
+
+        if let event::Event::Key(key) = event::read()? {
+            match key.code {
+                event::KeyCode::Char('q') => app.shoudl_quit = true,
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::new(env::args()).unwrap_or_else(|err| {
         eprintln!("Problem parsing arguments: {}", err);
         std::process::exit(1);
     });
-    csv::Reader::from_path(config.file_path).unwrap_or_else(|err| {
+    let mut reader = csv::Reader::from_path(&config.file_path).unwrap_or_else(|err| {
         eprintln!("Problem reading the file: {}", err);
         std::process::exit(1);
-    }).into_records().for_each(|result| {
-        match result {
-            Ok(record) => println!("{:?}", record),
-            Err(err) => eprintln!("Error reading record: {}", err),
-        }
     });
+    let headers = reader
+        .headers()
+        .unwrap_or_else(|err| {
+            eprintln!("Problem reading the CSV headers: {}", err);
+            std::process::exit(1);
+        })
+        .iter()
+        .map(|header| header.to_string())
+        .collect::<Vec<String>>();
+
+    let data = reader
+        .into_records()
+        .map(|result| {
+            result
+                .unwrap_or_else(|err| {
+                    eprintln!("Problem parsing the CSV data: {}", err);
+                    std::process::exit(1);
+                })
+                .iter()
+                .map(|field| field.to_string())
+                .collect::<Vec<String>>()
+        });
+    let app = App::new(headers, data.collect());
+    ratatui::run(|terminal| run_app(terminal, app))
 }
