@@ -1,8 +1,8 @@
 use crossterm::event;
 use csv;
-use ratatui::layout::Constraint;
-use ratatui::style::{Style, Stylize, Color, Modifier};
-use ratatui::widgets::{Cell, Row, Table, TableState};
+use ratatui::layout::{Constraint, Layout};
+use ratatui::style::{Color, Modifier, Style, Stylize};
+use ratatui::widgets::{Cell, Paragraph, Row, Table, TableState};
 use ratatui::Frame;
 use std::env;
 
@@ -28,15 +28,17 @@ struct App {
     records: Vec<Vec<String>>,
     state: TableState,
     should_quit: bool,
+    filepath: String,
 }
 
 impl App {
-    fn new(headers: Vec<String>, records: Vec<Vec<String>>) -> App {
+    fn new(headers: Vec<String>, records: Vec<Vec<String>>, filepath: String) -> App {
         let mut app = App {
             headers,
             records,
             state: TableState::default(),
             should_quit: false,
+            filepath: filepath,
         };
         if !app.records.is_empty() {
             app.state.select(Some(0));
@@ -65,12 +67,26 @@ fn ui(frame: &mut Frame, app: &mut App) {
         .row_highlight_style(Style::default().bg(Color::DarkGray))
         .column_highlight_style(Style::default().bg(Color::DarkGray))
         .cell_highlight_style(
-          Style::default()
-              .bg(Color::Blue)
-              .fg(Color::White)
-              .add_modifier(Modifier::BOLD),
+            Style::default()
+                .bg(Color::Blue)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         );
-    frame.render_stateful_widget(table, frame.area(), &mut app.state);
+    let chunks = Layout::default()
+        .direction(ratatui::layout::Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(frame.area());
+    let bar = format!(
+        " Row {}/{} | Col {}/{} | {} ",
+        app.state.selected().map_or(0, |i| i + 1),
+        app.records.len(),
+        app.state.selected_column().map_or(0, |i| i + 1),
+        app.headers.len(),
+        app.filepath
+    );
+    let bar = Paragraph::new(bar).style(Style::default().bg(Color::DarkGray).fg(Color::White));
+    frame.render_stateful_widget(table, chunks[0], &mut app.state);
+    frame.render_widget(bar, chunks[1]);
 }
 
 fn run_app(
@@ -133,6 +149,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|field| field.to_string())
             .collect::<Vec<String>>()
     });
-    let app = App::new(headers, data.collect());
+    let app = App::new(headers, data.collect(), config.file_path);
     ratatui::run(|terminal| run_app(terminal, app))
 }
