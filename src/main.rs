@@ -27,7 +27,7 @@ struct App {
     headers: Vec<String>,
     records: Vec<Vec<String>>,
     state: TableState,
-    shoudl_quit: bool,
+    should_quit: bool,
 }
 
 impl App {
@@ -36,38 +36,13 @@ impl App {
             headers,
             records,
             state: TableState::default(),
-            shoudl_quit: false,
+            should_quit: false,
         };
-        app.state.select(Some(0));
+        if !app.records.is_empty() {
+            app.state.select(Some(0));
+            app.state.select_column(Some(0));
+        }
         app
-    }
-
-    fn next(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i >= self.records.len() - 1 {
-                    0
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
-    }
-
-    fn previous(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    self.records.len() - 1 
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
     }
 }
 
@@ -87,13 +62,14 @@ fn ui(frame: &mut Frame, app: &mut App) {
                 .title("CSV Viewer")
                 .borders(ratatui::widgets::Borders::ALL),
         )
-        .row_highlight_style(
-            Style::default()
-                .bg(Color::Blue)
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(">> ");
+        .row_highlight_style(Style::default().bg(Color::DarkGray))
+        .column_highlight_style(Style::default().bg(Color::DarkGray))
+        .cell_highlight_style(
+          Style::default()
+              .bg(Color::Blue)
+              .fg(Color::White)
+              .add_modifier(Modifier::BOLD),
+        );
     frame.render_stateful_widget(table, frame.area(), &mut app.state);
 }
 
@@ -101,14 +77,26 @@ fn run_app(
     temrinal: &mut ratatui::DefaultTerminal,
     mut app: App,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    while !app.shoudl_quit {
+    while !app.should_quit {
         temrinal.draw(|frame| ui(frame, &mut app))?;
 
         if let event::Event::Key(key) = event::read()? {
             match key.code {
-                event::KeyCode::Char('q') => app.shoudl_quit = true,
-                event::KeyCode::Down => app.next(),
-                event::KeyCode::Up => app.previous(),
+                event::KeyCode::Char('q') => app.should_quit = true,
+                event::KeyCode::Down => app.state.select_next(),
+                event::KeyCode::Up => app.state.select_previous(),
+                event::KeyCode::Left => app.state.select_previous_column(),
+                event::KeyCode::Right => app.state.select_next_column(),
+                event::KeyCode::Char('j') => app.state.select_next(),
+                event::KeyCode::Char('k') => app.state.select_previous(),
+                event::KeyCode::Char('h') => app.state.select_previous_column(),
+                event::KeyCode::Char('l') => app.state.select_next_column(),
+                event::KeyCode::Char('g') => app.state.select_first(),
+                event::KeyCode::Char('G') => app.state.select_last(),
+                event::KeyCode::PageDown => app.state.scroll_down_by(20),
+                event::KeyCode::PageUp => app.state.scroll_up_by(20),
+                event::KeyCode::Home => app.state.select_first(),
+                event::KeyCode::End => app.state.select_last(),
                 _ => {}
             }
         }
