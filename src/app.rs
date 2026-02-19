@@ -1,3 +1,5 @@
+use std::vec;
+
 use ratatui::widgets::TableState;
 
 pub struct Config {
@@ -23,16 +25,19 @@ pub struct App {
     pub state: TableState,
     pub should_quit: bool,
     pub filepath: String,
+    pub column_widths: Vec<u16>,
 }
 
 impl App {
     pub fn new(headers: Vec<String>, records: Vec<Vec<String>>, filepath: String) -> App {
+        let column_count = headers.len();
         let mut app = App {
             headers,
             records,
             state: TableState::default(),
             should_quit: false,
             filepath: filepath,
+            column_widths: vec![15; column_count]
         };
         if !app.records.is_empty() {
             app.state.select(Some(0));

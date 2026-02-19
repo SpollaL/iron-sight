@@ -11,8 +11,11 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
         .iter()
         .map(|record| Row::new(record.iter().map(|field| Cell::from(field.as_str()))))
         .collect::<Vec<Row>>();
-    let column_count = app.records.first().map_or(0, |record| record.len());
-    let widths = vec![Constraint::Length(15); column_count];
+    let widths: Vec<Constraint> = app
+        .column_widths
+        .iter()
+        .map(|w| Constraint::Length(*w))
+        .collect();
     let table = Table::new(rows, widths)
         .header(header_cells.bold().bottom_margin(1))
         .block(

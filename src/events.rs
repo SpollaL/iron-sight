@@ -26,9 +26,23 @@ pub fn run_app(
                 event::KeyCode::PageUp => app.state.scroll_up_by(20),
                 event::KeyCode::Home => app.state.select_first(),
                 event::KeyCode::End => app.state.select_last(),
+                event::KeyCode::Char('_') => autofit_column(&mut app),
                 _ => {}
             }
         }
     }
     Ok(())
+}
+
+fn autofit_column(app: &mut App) {
+    if let Some(col) = app.state.selected_column() {
+        let header_width = app.headers.get(col).map_or(0, |h| h.len()) as u16;
+        let max_data = app
+            .records
+            .iter()
+            .map(|r| r.get(col).map_or(0, |f| f.len()))
+            .max()
+            .unwrap_or(0) as u16;
+        app.column_widths[col] = max_data.max(header_width);
+    }
 }
