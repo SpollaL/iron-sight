@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, Mode};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::widgets::{Cell, Paragraph, Row, Table};
@@ -35,15 +35,35 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
         .direction(ratatui::layout::Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(frame.area());
-    let bar = format!(
-        " Row {}/{} | Col {}/{} | {} ",
-        app.state.selected().map_or(0, |i| i + 1),
-        app.records.len(),
-        app.state.selected_column().map_or(0, |i| i + 1),
-        app.headers.len(),
-        app.filepath
-    );
+    let bar = get_bar(app);
     let bar = Paragraph::new(bar).style(Style::default().bg(Color::DarkGray).fg(Color::White));
     frame.render_stateful_widget(table, chunks[0], &mut app.state);
     frame.render_widget(bar, chunks[1]);
+}
+
+fn get_bar(app: &App) -> String {
+    match app.mode {
+        Mode::Normal => {
+            if !app.search_results.is_empty() {
+                format!(
+                    " [{}]/[{}] {} ",
+                    app.search_cursor + 1,
+                    app.search_results.len(),
+                    app.search_query
+                )
+            } else {
+                format!(
+                    " Row {}/{} | Col {}/{} | {} ",
+                    app.state.selected().map_or(0, |i| i + 1),
+                    app.records.len(),
+                    app.state.selected_column().map_or(0, |i| i + 1),
+                    app.headers.len(),
+                    app.filepath
+                )
+            }
+        }
+        Mode::Search => {
+            format!("/{}_", app.search_query,)
+        }
+    }
 }

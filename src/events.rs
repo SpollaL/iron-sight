@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, Mode};
 use crate::ui::ui;
 use crossterm::event;
 
@@ -10,24 +10,40 @@ pub fn run_app(
         temrinal.draw(|frame| ui(frame, &mut app))?;
 
         if let event::Event::Key(key) = event::read()? {
-            match key.code {
-                event::KeyCode::Char('q') => app.should_quit = true,
-                event::KeyCode::Down => app.state.select_next(),
-                event::KeyCode::Up => app.state.select_previous(),
-                event::KeyCode::Left => app.state.select_previous_column(),
-                event::KeyCode::Right => app.state.select_next_column(),
-                event::KeyCode::Char('j') => app.state.select_next(),
-                event::KeyCode::Char('k') => app.state.select_previous(),
-                event::KeyCode::Char('h') => app.state.select_previous_column(),
-                event::KeyCode::Char('l') => app.state.select_next_column(),
-                event::KeyCode::Char('g') => app.state.select_first(),
-                event::KeyCode::Char('G') => app.state.select_last(),
-                event::KeyCode::PageDown => app.state.scroll_down_by(20),
-                event::KeyCode::PageUp => app.state.scroll_up_by(20),
-                event::KeyCode::Home => app.state.select_first(),
-                event::KeyCode::End => app.state.select_last(),
-                event::KeyCode::Char('_') => autofit_column(&mut app),
-                _ => {}
+            match app.mode{
+                Mode::Normal => {
+                    match key.code {
+                        event::KeyCode::Char('q') => app.should_quit = true,
+                        event::KeyCode::Down => app.state.select_next(),
+                        event::KeyCode::Up => app.state.select_previous(),
+                        event::KeyCode::Left => app.state.select_previous_column(),
+                        event::KeyCode::Right => app.state.select_next_column(),
+                        event::KeyCode::Char('j') => app.state.select_next(),
+                        event::KeyCode::Char('k') => app.state.select_previous(),
+                        event::KeyCode::Char('h') => app.state.select_previous_column(),
+                        event::KeyCode::Char('l') => app.state.select_next_column(),
+                        event::KeyCode::Char('g') => app.state.select_first(),
+                        event::KeyCode::Char('G') => app.state.select_last(),
+                        event::KeyCode::PageDown => app.state.scroll_down_by(20),
+                        event::KeyCode::PageUp => app.state.scroll_up_by(20),
+                        event::KeyCode::Home => app.state.select_first(),
+                        event::KeyCode::End => app.state.select_last(),
+                        event::KeyCode::Char('_') => autofit_column(&mut app),
+                        event::KeyCode::Char('/') => enter_search_mode(&mut app),
+                        event::KeyCode::Char('n') => go_to_next_search_result(&mut app),
+                        event::KeyCode::Char('N') => go_to_previous_search_result(&mut app),
+                        _ => {}
+                    }
+                },
+                Mode::Search => {
+                    match key.code {
+                        event::KeyCode::Backspace => pop_char_from_query(&mut app),
+                        event::KeyCode::Enter => to_first_query_result(&mut app),
+                        event::KeyCode::Char(c) => push_char_to_query(&mut app, c),
+                        event::KeyCode::Esc => to_normal_mode(&mut app),
+                        _ => {},
+                    }
+                }
             }
         }
     }
@@ -45,4 +61,53 @@ fn autofit_column(app: &mut App) {
             .unwrap_or(0) as u16;
         app.column_widths[col] = max_data.max(header_width);
     }
+}
+
+fn enter_search_mode(app: &mut App) {
+    app.mode = Mode::Search;
+    app.search_results = Vec::new();
+    app.search_query = String::new();
+}
+
+fn push_char_to_query(app: &mut App, c: char) {
+    app.search_query.push(c); 
+    app.update_search();
+}
+
+fn pop_char_from_query(app: &mut App) {
+    app.search_query.pop(); 
+    app.update_search();
+}
+
+fn to_first_query_result(app: &mut App) {
+    if app.search_results.is_empty() {return;}
+    app.state.select(Some(app.search_results[app.search_cursor]));
+    app.mode = Mode::Normal;
+}
+
+fn to_normal_mode(app: &mut App) {
+    app.mode = Mode::Normal;
+    app.search_results = Vec::new();
+    app.search_query = String::new();
+    app.search_cursor = 0
+}
+
+fn go_to_next_search_result(app: &mut App) {
+    if app.search_results.is_empty() {return;}
+    app.search_cursor = if app.search_cursor < app.search_results.len() - 1 {
+        app.search_cursor + 1
+    } else {
+        0
+    };
+    app.state.select(Some(app.search_results[app.search_cursor]));
+}
+
+fn go_to_previous_search_result(app: &mut App) {
+    if app.search_results.is_empty() {return;}
+    app.search_cursor = if app.search_cursor > 0 {
+        app.search_cursor - 1
+    } else {
+        app.search_results.len() - 1
+    };
+    app.state.select(Some(app.search_results[app.search_cursor]));
 }
