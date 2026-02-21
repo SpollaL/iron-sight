@@ -33,6 +33,7 @@ pub fn run_app(
                         event::KeyCode::Char('n') => go_to_next_search_result(&mut app),
                         event::KeyCode::Char('N') => go_to_previous_search_result(&mut app),
                         event::KeyCode::Char('f') => enter_filter_mode(&mut app),
+                        event::KeyCode::Char('F') => from_filter_to_normal_mode(&mut app),
                         _ => {}
                     }
                 },
