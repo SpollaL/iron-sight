@@ -39,7 +39,14 @@ cargo run -- <path-to-file.csv>
 |-----|--------|
 | `f` | Enter filter mode (filters rows by current column) |
 | `Enter` | Confirm filter and return to normal mode |
+| `F` | Clear active filter |
 | `Esc` | Exit filter and clear results |
+
+### Sort
+
+| Key | Action |
+|-----|--------|
+| `s` | Sort by current column (toggles asc/desc) |
 
 ### Other
 
