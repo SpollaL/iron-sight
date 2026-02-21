@@ -8,7 +8,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     let header_cells = Row::new(app.headers.iter().enumerate().map(|(i, header)| {
         if app.sort_column == Some(i) {
             let dir = match app.sort_direction {
-                    SortDirection::Ascending => '▲' ,
+                SortDirection::Ascending => '▲',
                 SortDirection::Descending => '▼',
             };
             Cell::from(format!("{} {}", header, dir))
@@ -71,7 +71,7 @@ fn get_bar(app: &App) -> String {
                     app.filter_indices.len(),
                     app.state.selected_column().map_or(0, |i| i + 1),
                     app.headers.len(),
-                    app.filepath
+                    app.file_path
                 )
             } else {
                 format!(
@@ -80,7 +80,7 @@ fn get_bar(app: &App) -> String {
                     app.records.len(),
                     app.state.selected_column().map_or(0, |i| i + 1),
                     app.headers.len(),
-                    app.filepath
+                    app.file_path
                 )
             }
         }

@@ -2,10 +2,19 @@
 
 A terminal CSV viewer with vim-style navigation, built with Rust and ratatui.
 
-## Usage
+## Requirements
+
+- Rust 1.75 or higher
+
+## Build & Install
 
 ```
+# Run directly
 cargo run -- <path-to-file.csv>
+
+# Install
+cargo install --path .
+iron-sight <path-to-file.csv>
 ```
 
 ## Keybindings
