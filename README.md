@@ -57,6 +57,12 @@ iron-sight <path-to-file.csv>
 |-----|--------|
 | `s` | Sort by current column (toggles asc/desc) |
 
+### Column Stats
+
+| Key | Action |
+|-----|--------|
+| `S` | Toggle stats popup for current column (count, min, max, mean, median) |
+
 ### Other
 
 | Key | Action |

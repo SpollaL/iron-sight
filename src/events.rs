@@ -37,6 +37,7 @@ pub fn run_app(
                         event::KeyCode::Char('f') => enter_filter_mode(&mut app),
                         event::KeyCode::Char('F') => from_filter_to_normal_mode(&mut app),
                         event::KeyCode::Char('s') => app.sort_by_column(),
+                        event::KeyCode::Char('S') => app.show_stats = !app.show_stats,
                         _ => {}
                     }
                 }

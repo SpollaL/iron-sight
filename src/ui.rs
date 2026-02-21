@@ -1,7 +1,7 @@
 use crate::app::{App, Mode, SortDirection};
-use ratatui::layout::{Constraint, Layout};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
-use ratatui::widgets::{Cell, Paragraph, Row, Table};
+use ratatui::widgets::{Cell, Clear, Paragraph, Row, Table};
 use ratatui::Frame;
 
 pub fn ui(frame: &mut Frame, app: &mut App) {
@@ -51,6 +51,28 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     let bar = Paragraph::new(bar).style(Style::default().bg(Color::DarkGray).fg(Color::White));
     frame.render_stateful_widget(table, chunks[0], &mut app.state);
     frame.render_widget(bar, chunks[1]);
+    if app.show_stats {
+        let col = app.state.selected_column().unwrap_or(0);
+        let stats = app.compute_stats(col);
+        let area = centered_rect(40, 40, frame.area());
+        frame.render_widget(Clear, area);
+        let content = format!(
+            "Count: {}\nMin:   {}\nMax:   {}\nMean:  {}\nMedian: {}",
+            stats.count,
+            stats.min,
+            stats.max,
+            stats.mean.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+            stats.median.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+        );
+        let popup = Paragraph::new(content)
+            .block(
+                ratatui::widgets::Block::default()
+                    .title(" Column Stats ")
+                    .borders(ratatui::widgets::Borders::ALL),
+            )
+            .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+        frame.render_widget(popup, area);
+    }
 }
 
 fn get_bar(app: &App) -> String {
@@ -91,4 +113,20 @@ fn get_bar(app: &App) -> String {
             format!("f {}_", app.filter_query)
         }
     }
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+    let vertical = Layout::vertical([
+        Constraint::Percentage((100 - percent_y) / 2),
+        Constraint::Percentage(percent_y),
+        Constraint::Percentage((100 - percent_y) / 2),
+    ])
+    .split(area);
+
+    Layout::horizontal([
+        Constraint::Percentage((100 - percent_x) / 2),
+        Constraint::Percentage(percent_x),
+        Constraint::Percentage((100 - percent_x) / 2),
+    ])
+    .split(vertical[1])[1]
 }

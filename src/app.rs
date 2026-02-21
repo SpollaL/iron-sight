@@ -30,6 +30,14 @@ pub enum SortDirection {
     Descending,
 }
 
+pub struct ColumnStats {
+    pub count: usize,
+    pub min: String,
+    pub max: String,
+    pub mean: Option<f64>,
+    pub median: Option<f64>,
+}
+
 pub struct App {
     pub headers: Vec<String>,
     pub records: Vec<Vec<String>>,
@@ -46,6 +54,7 @@ pub struct App {
     pub filter_column: Option<usize>,
     pub sort_column: Option<usize>,
     pub sort_direction: SortDirection,
+    pub show_stats: bool,
 }
 
 impl App {
@@ -67,6 +76,7 @@ impl App {
             filter_column: None,
             sort_column: None,
             sort_direction: SortDirection::Ascending,
+            show_stats: false,
         };
         if !app.records.is_empty() {
             app.state.select(Some(0));
@@ -126,6 +136,49 @@ impl App {
         if !self.filter_query.is_empty() {
             self.update_filter();
         }
+    }
+
+    pub fn compute_stats(&mut self, col: usize) -> ColumnStats {
+        let values: Vec<&String> = self
+            .records
+            .iter()
+            .filter_map(|r| r.get(col))
+            .filter(|v| !v.is_empty())
+            .collect();
+
+        let numeric: Vec<f64> = self
+            .records
+            .iter()
+            .filter_map(|r| r.get(col))
+            .filter_map(|v| v.parse::<f64>().ok())
+            .collect();
+
+        let mean = if numeric.is_empty() {
+            None
+        } else {
+            Some(numeric.iter().sum::<f64>() / numeric.len() as f64)
+        };
+
+        ColumnStats {
+            count: self.records.len(),
+            min: values.iter().min().map(|v| v.to_string()).unwrap_or_default(),
+            max: values.iter().max().map(|v| v.to_string()).unwrap_or_default(),
+            mean: mean,
+            median: median(numeric),
+        }
+    }
+}
+
+fn median(mut array: Vec<f64>) -> Option<f64> {
+    if array.is_empty() {
+        return None
+    };
+    array.sort_by(|a, b| a.total_cmp(b));
+    let middle = array.len() / 2;
+    if array.len() % 2 == 0 {
+        Some((array[middle] + array[middle - 1]) / 2.0)
+    } else {
+        Some(array[middle])
     }
 }
 
