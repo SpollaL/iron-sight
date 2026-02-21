@@ -61,8 +61,12 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
             stats.count,
             stats.min,
             stats.max,
-            stats.mean.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
-            stats.median.map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+            stats
+                .mean
+                .map_or("N/A".to_string(), |v| format!("{:.2}", v)),
+            stats
+                .median
+                .map_or("N/A".to_string(), |v| format!("{:.2}", v)),
         );
         let popup = Paragraph::new(content)
             .block(
@@ -86,9 +90,12 @@ fn get_bar(app: &App) -> String {
                     app.search_query
                 )
             } else if !app.filter_indices.is_empty() {
+                let filter_summary = app.filters.iter().map(|(col, q)| {
+                    format!("[{}: {}]", app.headers.get(*col).map_or("?", |h| h), q)
+                }).collect::<Vec<_>>().join(" ");
                 format!(
-                    " [filter: {}] Row {}/{} | Col {}/{} | {} ",
-                    app.filter_query,
+                    " {} Row {}/{} | Col {}/{} | {} ",
+                    filter_summary,
                     app.state.selected().map_or(0, |i| i + 1),
                     app.filter_indices.len(),
                     app.state.selected_column().map_or(0, |i| i + 1),
@@ -110,7 +117,7 @@ fn get_bar(app: &App) -> String {
             format!("/{}_", app.search_query,)
         }
         Mode::Filter => {
-            format!("f {}_", app.filter_query)
+            format!("f {}_", app.filter_input)
         }
     }
 }

@@ -49,9 +49,9 @@ pub struct App {
     pub search_query: String,
     pub search_results: Vec<usize>,
     pub search_cursor: usize,
-    pub filter_query: String,
+    pub filters: Vec<(usize, String)>,
     pub filter_indices: Vec<usize>,
-    pub filter_column: Option<usize>,
+    pub filter_input: String,
     pub sort_column: Option<usize>,
     pub sort_direction: SortDirection,
     pub show_stats: bool,
@@ -71,9 +71,9 @@ impl App {
             search_query: String::new(),
             search_results: Vec::new(),
             search_cursor: 0,
-            filter_query: String::new(),
+            filter_input: String::new(),
             filter_indices: Vec::new(),
-            filter_column: None,
+            filters: Vec::new(),
             sort_column: None,
             sort_direction: SortDirection::Ascending,
             show_stats: false,
@@ -102,14 +102,19 @@ impl App {
     }
 
     pub fn update_filter(&mut self) {
-        let query = self.filter_query.to_lowercase();
+        let col = self.state.selected_column().unwrap_or(0);
+        let input = self.filter_input.to_lowercase();
         self.filter_indices = self
             .records
             .iter()
             .enumerate()
             .filter(|(_, r)| {
-                r.get(self.filter_column.unwrap_or(0))
-                    .map_or(false, |f| f.to_lowercase().contains(&query))
+                self.filters
+                    .iter()
+                    .all(|(fc, fq)| r.get(*fc).map_or(false, |f| f.to_lowercase().contains(fq)))
+                    && (input.is_empty()
+                        || r.get(col)
+                            .map_or(false, |f| f.to_lowercase().contains(&input)))
             })
             .map(|(i, _)| i)
             .collect();
@@ -133,7 +138,7 @@ impl App {
             SortDirection::Ascending => a.get(current_column).cmp(&b.get(current_column)),
             SortDirection::Descending => b.get(current_column).cmp(&a.get(current_column)),
         });
-        if !self.filter_query.is_empty() {
+        if !self.filters.is_empty() || !self.filter_input.is_empty() {
             self.update_filter();
         }
     }
@@ -161,8 +166,16 @@ impl App {
 
         ColumnStats {
             count: self.records.len(),
-            min: values.iter().min().map(|v| v.to_string()).unwrap_or_default(),
-            max: values.iter().max().map(|v| v.to_string()).unwrap_or_default(),
+            min: values
+                .iter()
+                .min()
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+            max: values
+                .iter()
+                .max()
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
             mean: mean,
             median: median(numeric),
         }
@@ -171,7 +184,7 @@ impl App {
 
 fn median(mut array: Vec<f64>) -> Option<f64> {
     if array.is_empty() {
-        return None
+        return None;
     };
     array.sort_by(|a, b| a.total_cmp(b));
     let middle = array.len() / 2;
@@ -223,8 +236,7 @@ mod tests {
     #[test]
     fn test_update_filter_finds_matches() {
         let mut app = make_app();
-        app.filter_column = Some(0);
-        app.filter_query = "bob".to_string();
+        app.filters = vec![(0, "bob".to_string())];
         app.update_filter();
         assert_eq!(app.filter_indices, vec![1]);
     }
