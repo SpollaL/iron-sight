@@ -34,6 +34,7 @@ pub fn run_app(
                         event::KeyCode::Char('N') => go_to_previous_search_result(&mut app),
                         event::KeyCode::Char('f') => enter_filter_mode(&mut app),
                         event::KeyCode::Char('F') => from_filter_to_normal_mode(&mut app),
+                        event::KeyCode::Char('s') => app.sort_by_column(),
                         _ => {}
                     }
                 },
@@ -84,6 +85,7 @@ fn enter_filter_mode(app: &mut App) {
     app.mode = Mode::Filter;
     app.filter_indices = Vec::new();
     app.filter_query = String::new();
+    app.filter_column = app.state.selected_column();
 }
 
 fn push_char_to_search_query(app: &mut App, c: char) {
@@ -127,6 +129,7 @@ fn from_filter_to_normal_mode(app: &mut App) {
     app.mode = Mode::Normal;
     app.filter_indices = Vec::new();
     app.filter_query = String::new();
+    app.filter_column = None;
 }
 
 fn go_to_next_search_result(app: &mut App) {

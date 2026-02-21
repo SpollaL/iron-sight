@@ -1,11 +1,21 @@
-use crate::app::{App, Mode};
+use crate::app::{App, Mode, SortDirection};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::widgets::{Cell, Paragraph, Row, Table};
 use ratatui::Frame;
 
 pub fn ui(frame: &mut Frame, app: &mut App) {
-    let header_cells = Row::new(app.headers.iter().map(|header| Cell::from(header.as_str())));
+    let header_cells = Row::new(app.headers.iter().enumerate().map(|(i, header)| {
+        if app.sort_column == Some(i) {
+            let dir = match app.sort_direction {
+                    SortDirection::Ascending => '▲' ,
+                SortDirection::Descending => '▼',
+            };
+            Cell::from(format!("{} {}", header, dir))
+        } else {
+            Cell::from(header.as_str())
+        }
+    }));
     let rows = app
         .records
         .iter()
@@ -54,7 +64,8 @@ fn get_bar(app: &App) -> String {
                     app.search_query
                 )
             } else if !app.filter_indices.is_empty() {
-                format!(" [filter: {}] Row {}/{} | Col {}/{} | {} ",
+                format!(
+                    " [filter: {}] Row {}/{} | Col {}/{} | {} ",
                     app.filter_query,
                     app.state.selected().map_or(0, |i| i + 1),
                     app.filter_indices.len(),
