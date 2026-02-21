@@ -1,5 +1,3 @@
-use std::vec;
-
 use ratatui::widgets::TableState;
 
 pub struct Config {
@@ -22,6 +20,7 @@ impl Config {
 pub enum Mode {
     Search,
     Normal,
+    Filter,
 }
 
 pub struct App {
@@ -35,6 +34,8 @@ pub struct App {
     pub search_query: String,
     pub search_results: Vec<usize>,
     pub search_cursor: usize,
+    pub filter_query: String,
+    pub filter_indices: Vec<usize>,
 }
 
 impl App {
@@ -51,6 +52,8 @@ impl App {
             search_query: String::new(),
             search_results: Vec::new(),
             search_cursor: 0,
+            filter_query: String::new(),
+            filter_indices: Vec::new(),
         };
         if !app.records.is_empty() {
             app.state.select(Some(0));
@@ -73,5 +76,21 @@ impl App {
             .collect();
         self.search_results = search_results;
         self.search_cursor = 0;
+    }
+
+    pub fn update_filter(&mut self) {
+        let current_column = self.state.selected_column().unwrap_or(0);
+        let query = self.filter_query.to_lowercase();
+        let filter_indices: Vec<usize> = self
+            .records
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| {
+                r.get(current_column)
+                    .map_or(false, |f| f.to_lowercase().contains(&query))
+            })
+            .map(|(i, _)| i)
+            .collect();
+        self.filter_indices = filter_indices;
     }
 }

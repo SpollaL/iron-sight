@@ -33,6 +33,14 @@ cargo run -- <path-to-file.csv>
 | `N` | Previous match |
 | `Esc` | Exit search and clear results |
 
+### Filter
+
+| Key | Action |
+|-----|--------|
+| `f` | Enter filter mode (filters rows by current column) |
+| `Enter` | Confirm filter and return to normal mode |
+| `Esc` | Exit filter and clear results |
+
 ### Other
 
 | Key | Action |

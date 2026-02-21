@@ -3,11 +3,11 @@ use crate::ui::ui;
 use crossterm::event;
 
 pub fn run_app(
-    temrinal: &mut ratatui::DefaultTerminal,
+    terminal: &mut ratatui::DefaultTerminal,
     mut app: App,
 ) -> Result<(), Box<dyn std::error::Error>> {
     while !app.should_quit {
-        temrinal.draw(|frame| ui(frame, &mut app))?;
+        terminal.draw(|frame| ui(frame, &mut app))?;
 
         if let event::Event::Key(key) = event::read()? {
             match app.mode{
@@ -32,15 +32,25 @@ pub fn run_app(
                         event::KeyCode::Char('/') => enter_search_mode(&mut app),
                         event::KeyCode::Char('n') => go_to_next_search_result(&mut app),
                         event::KeyCode::Char('N') => go_to_previous_search_result(&mut app),
+                        event::KeyCode::Char('f') => enter_filter_mode(&mut app),
                         _ => {}
                     }
                 },
                 Mode::Search => {
                     match key.code {
-                        event::KeyCode::Backspace => pop_char_from_query(&mut app),
-                        event::KeyCode::Enter => to_first_query_result(&mut app),
-                        event::KeyCode::Char(c) => push_char_to_query(&mut app, c),
-                        event::KeyCode::Esc => to_normal_mode(&mut app),
+                        event::KeyCode::Backspace => pop_char_from_search_query(&mut app),
+                        event::KeyCode::Enter => to_first_search_query_result(&mut app),
+                        event::KeyCode::Char(c) => push_char_to_search_query(&mut app, c),
+                        event::KeyCode::Esc => from_search_to_normal_mode(&mut app),
+                        _ => {},
+                    }
+                },
+                Mode::Filter => {
+                    match key.code {
+                        event::KeyCode::Backspace => pop_char_from_filter_query(&mut app),
+                        event::KeyCode::Enter => to_normal_mode_with_filter(&mut app),
+                        event::KeyCode::Char(c) => push_char_to_filter_query(&mut app, c),
+                        event::KeyCode::Esc => from_filter_to_normal_mode(&mut app),
                         _ => {},
                     }
                 }
@@ -69,27 +79,53 @@ fn enter_search_mode(app: &mut App) {
     app.search_query = String::new();
 }
 
-fn push_char_to_query(app: &mut App, c: char) {
+fn enter_filter_mode(app: &mut App) {
+    app.mode = Mode::Filter;
+    app.filter_indices = Vec::new();
+    app.filter_query = String::new();
+}
+
+fn push_char_to_search_query(app: &mut App, c: char) {
     app.search_query.push(c); 
     app.update_search();
 }
 
-fn pop_char_from_query(app: &mut App) {
+fn push_char_to_filter_query(app: &mut App, c: char) {
+    app.filter_query.push(c); 
+    app.update_filter();
+}
+
+fn pop_char_from_search_query(app: &mut App) {
     app.search_query.pop(); 
     app.update_search();
 }
 
-fn to_first_query_result(app: &mut App) {
+fn pop_char_from_filter_query(app: &mut App) {
+    app.filter_query.pop(); 
+    app.update_filter();
+}
+
+fn to_first_search_query_result(app: &mut App) {
     if app.search_results.is_empty() {return;}
     app.state.select(Some(app.search_results[app.search_cursor]));
     app.mode = Mode::Normal;
 }
 
-fn to_normal_mode(app: &mut App) {
+fn to_normal_mode_with_filter(app: &mut App) {
+    app.mode = Mode::Normal;
+}
+
+fn from_search_to_normal_mode(app: &mut App) {
     app.mode = Mode::Normal;
     app.search_results = Vec::new();
     app.search_query = String::new();
     app.search_cursor = 0
+}
+
+fn from_filter_to_normal_mode(app: &mut App) {
+    app.mode = Mode::Normal;
+    app.filter_indices = Vec::new();
+    app.filter_query = String::new();
 }
 
 fn go_to_next_search_result(app: &mut App) {

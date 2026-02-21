@@ -9,7 +9,9 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     let rows = app
         .records
         .iter()
-        .map(|record| Row::new(record.iter().map(|field| Cell::from(field.as_str()))))
+        .enumerate()
+        .filter(|(i, _)| app.filter_indices.is_empty() || app.filter_indices.contains(i))
+        .map(|(_, record)| Row::new(record.iter().map(|field| Cell::from(field.as_str()))))
         .collect::<Vec<Row>>();
     let widths: Vec<Constraint> = app
         .column_widths
@@ -51,6 +53,15 @@ fn get_bar(app: &App) -> String {
                     app.search_results.len(),
                     app.search_query
                 )
+            } else if !app.filter_indices.is_empty() {
+                format!(" [filter: {}] Row {}/{} | Col {}/{} | {} ",
+                    app.filter_query,
+                    app.state.selected().map_or(0, |i| i + 1),
+                    app.filter_indices.len(),
+                    app.state.selected_column().map_or(0, |i| i + 1),
+                    app.headers.len(),
+                    app.filepath
+                )
             } else {
                 format!(
                     " Row {}/{} | Col {}/{} | {} ",
@@ -64,6 +75,9 @@ fn get_bar(app: &App) -> String {
         }
         Mode::Search => {
             format!("/{}_", app.search_query,)
+        }
+        Mode::Filter => {
+            format!("f {}_", app.filter_query)
         }
     }
 }
