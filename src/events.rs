@@ -1,7 +1,6 @@
 use crate::app::{App, Mode};
 use crate::ui::ui;
 use crossterm::event;
-use polars::prelude::DataType;
 
 const PAGE_SCROLL_AMOUNT: u16 = 20;
 
@@ -38,6 +37,15 @@ pub fn run_app(
                     event::KeyCode::Char('F') => clear_filters(&mut app),
                     event::KeyCode::Char('s') => app.sort_by_column(),
                     event::KeyCode::Char('S') => app.show_stats = !app.show_stats,
+                    event::KeyCode::Char('b') => app.toggle_groupby_key(),
+                    event::KeyCode::Char('a') => app.cycle_groupby_agg(),
+                    event::KeyCode::Char('B') => {
+                        if app.groupby_active {
+                            app.clear_groupby();
+                        } else {
+                            app.apply_groupby();
+                        }
+                    }
                     _ => {}
                 },
                 Mode::Search => match key.code {
@@ -61,30 +69,7 @@ pub fn run_app(
 }
 
 fn autofit_column(app: &mut App) {
-    if let Some(col_idx) = app.state.selected_column() {
-        let header_width = app.headers.get(col_idx).map_or(0, |h| h.len()) as u16;
-        let col_name = app.headers[col_idx].clone();
-        let max_data = app
-            .view
-            .column(&col_name)
-            .ok()
-            .map(|col| {
-                let str_series = col
-                    .as_series()
-                    .unwrap()
-                    .cast(&DataType::String)
-                    .unwrap();
-                str_series
-                    .str()
-                    .unwrap()
-                    .into_iter()
-                    .map(|v| v.map_or(0, |s| s.len()))
-                    .max()
-                    .unwrap_or(0) as u16
-            })
-            .unwrap_or(0);
-        app.column_widths[col_idx] = max_data.max(header_width);
-    }
+    app.autofit_selected_column();
 }
 
 fn enter_search_mode(app: &mut App) {

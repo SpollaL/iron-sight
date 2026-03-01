@@ -31,6 +31,15 @@ pub enum SortDirection {
     Descending,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum AggFunc {
+    Sum,
+    Mean,
+    Count,
+    Min,
+    Max,
+}
+
 pub struct ColumnStats {
     pub count: usize,
     pub min: String,
@@ -56,6 +65,11 @@ pub struct App {
     pub sort_column: Option<usize>,
     pub sort_direction: SortDirection,
     pub show_stats: bool,
+    pub groupby_keys: Vec<usize>,
+    pub groupby_aggs: Vec<(usize, AggFunc)>,
+    pub groupby_active: bool,
+    pub saved_headers: Vec<String>,
+    pub saved_column_widths: Vec<u16>,
 }
 
 impl App {
@@ -84,6 +98,11 @@ impl App {
             sort_column: None,
             sort_direction: SortDirection::Ascending,
             show_stats: false,
+            groupby_keys: Vec::new(),
+            groupby_aggs: Vec::new(),
+            groupby_active: false,
+            saved_headers: Vec::new(),
+            saved_column_widths: Vec::new(),
         };
         if !app.df.is_empty() {
             app.state.select(Some(0));
@@ -111,9 +130,7 @@ impl App {
             .unwrap()
             .into_iter()
             .enumerate()
-            .filter(|(_, val)| {
-                val.map_or(false, |s| s.to_lowercase().contains(&query))
-            })
+            .filter(|(_, val)| val.map_or(false, |s| s.to_lowercase().contains(&query)))
             .map(|(i, _)| i)
             .collect();
 
@@ -150,10 +167,8 @@ impl App {
 
         self.view = if let Some(sort_col) = self.sort_column {
             let col_name = &self.headers[sort_col];
-            let opts = SortMultipleOptions::default().with_order_descending(matches!(
-                self.sort_direction,
-                SortDirection::Descending
-            ));
+            let opts = SortMultipleOptions::default()
+                .with_order_descending(matches!(self.sort_direction, SortDirection::Descending));
             match filtered.sort([col_name], opts) {
                 Ok(sorted) => sorted,
                 Err(_) => filtered,
@@ -175,14 +190,66 @@ impl App {
             self.sort_direction = SortDirection::Ascending;
         }
         let col_name = &self.headers[current_column];
-        let opts = SortMultipleOptions::default().with_order_descending(matches!(
-            self.sort_direction,
-            SortDirection::Descending
-        ));
+        let opts = SortMultipleOptions::default()
+            .with_order_descending(matches!(self.sort_direction, SortDirection::Descending));
         self.view = match self.view.sort([col_name], opts) {
             Ok(sorted) => sorted,
             Err(_) => self.view.clone(),
         };
+    }
+
+    pub fn autofit_selected_column(&mut self) {
+        if let Some(col_idx) = self.state.selected_column() {
+            let label = self.header_label(col_idx);
+            let header_width = label.chars().count() as u16;
+            let col_name = self.headers[col_idx].clone();
+            let max_data = self
+                .view
+                .column(&col_name)
+                .ok()
+                .and_then(|col| {
+                    let cast = col.as_series()?.cast(&DataType::String).ok()?;
+                    let max = cast
+                        .str()
+                        .ok()?
+                        .into_iter()
+                        .filter_map(|v| v)
+                        .map(|s: &str| s.chars().count())
+                        .max()
+                        .map(|n| n as u16);
+                    max
+                })
+                .unwrap_or(0);
+            self.column_widths[col_idx] = max_data.max(header_width);
+        }
+    }
+
+    pub fn header_label(&self, col_idx: usize) -> String {
+        let base = &self.headers[col_idx];
+        let label = if self.sort_column == Some(col_idx) {
+            let dir = if matches!(self.sort_direction, SortDirection::Descending) {
+                "▼"
+            } else {
+                "▲"
+            };
+            format!("{} {}", base, dir)
+        } else {
+            base.clone()
+        };
+        if self.groupby_keys.contains(&col_idx) {
+            format!("{} [K]", label)
+        } else if let Some((_, func)) = self.groupby_aggs.iter().find(|(j, _)| *j == col_idx) {
+            let sym = match func {
+                AggFunc::Sum => "Σ",
+                AggFunc::Mean => "μ",
+                AggFunc::Count => "#",
+                AggFunc::Min => "↓",
+                AggFunc::Max => "↑",
+            };
+            format!("{} [{}]", label, sym)
+        } else {
+            label
+        }
     }
 
     pub fn compute_stats(&mut self, col: usize) -> ColumnStats {
@@ -210,6 +277,100 @@ impl App {
             mean,
             median,
         }
+    }
+
+    pub fn toggle_groupby_key(&mut self) {
+        let col = self.state.selected_column().unwrap_or(0);
+        if let Some(pos) = self.groupby_keys.iter().position(|&k| k == col) {
+            self.groupby_keys.remove(pos);
+        } else {
+            self.groupby_keys.push(col);
+            self.groupby_aggs.retain(|(i, _)| *i != col);
+        }
+    }
+
+    pub fn cycle_groupby_agg(&mut self) {
+        let col = self.state.selected_column().unwrap_or(0);
+        if self.groupby_keys.contains(&col) {
+            return;
+        };
+        if let Some(pos) = self.groupby_aggs.iter().position(|(i, _)| *i == col) {
+            let next = match self.groupby_aggs[pos].1 {
+                AggFunc::Sum => Some(AggFunc::Mean),
+                AggFunc::Mean => Some(AggFunc::Count),
+                AggFunc::Count => Some(AggFunc::Min),
+                AggFunc::Min => Some(AggFunc::Max),
+                AggFunc::Max => None,
+            };
+            self.groupby_aggs.remove(pos);
+            if let Some(func) = next {
+                self.groupby_aggs.push((col, func));
+            };
+        } else {
+            self.groupby_aggs.push((col, AggFunc::Sum));
+        }
+    }
+    pub fn apply_groupby(&mut self) {
+        if self.groupby_keys.is_empty() || self.groupby_aggs.is_empty() {
+            return;
+        }
+        let key_exprs: Vec<Expr> = self
+            .groupby_keys
+            .iter()
+            .map(|&i| col(&self.headers[i]))
+            .collect();
+        let agg_exprs: Vec<Expr> = self
+            .groupby_aggs
+            .iter()
+            .map(|(i, func)| {
+                let name = &self.headers[*i];
+                match func {
+                    AggFunc::Sum => col(name).sum().alias(&format!("{}_sum", name)),
+                    AggFunc::Mean => col(name).mean().alias(&format!("{}_mean", name)),
+                    AggFunc::Count => col(name).count().alias(&format!("{}_count", name)),
+                    AggFunc::Min => col(name).min().alias(&format!("{}_min", name)),
+                    AggFunc::Max => col(name).max().alias(&format!("{}_max", name)),
+                }
+            })
+            .collect();
+        let first_key = self.headers[self.groupby_keys[0]].clone();
+        let result = self
+            .view
+            .clone()
+            .lazy()
+            .group_by(key_exprs)
+            .agg(agg_exprs)
+            .sort([&first_key], SortMultipleOptions::default())
+            .collect();
+        if let Ok(df) = result {
+            self.saved_headers = self.headers.clone();
+            self.saved_column_widths = self.column_widths.clone();
+            self.headers = df
+                .get_column_names()
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            self.column_widths = vec![DEFAULT_COLUMN_WIDTH; df.width()];
+            self.sort_column = None;
+            self.search_results = Vec::new();
+            self.search_cursor = 0;
+            self.view = df;
+            self.groupby_active = true;
+            self.state.select(Some(0));
+            self.state.select_column(Some(0));
+        }
+    }
+
+    pub fn clear_groupby(&mut self) {
+        self.headers = self.saved_headers.clone();
+        self.column_widths = self.saved_column_widths.clone();
+        self.groupby_keys = Vec::new();
+        self.groupby_aggs = Vec::new();
+        self.groupby_active = false;
+        self.sort_column = None;
+        self.search_results = Vec::new();
+        self.search_cursor = 0;
+        self.update_filter();
     }
 }
 
@@ -271,6 +432,25 @@ mod tests {
         app.filters = vec![(0, "Bob".to_string())];
         app.update_filter();
         assert_eq!(app.view.height(), 1);
+    }
+
+    #[test]
+    fn test_autofit_uses_data_width() {
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.autofit_selected_column();
+        // "name" col: max("Alice"=5, "Bob"=3, "Charlie"=7) = 7, header "name" = 4
+        assert_eq!(app.column_widths[0], 7);
+    }
+
+    #[test]
+    fn test_autofit_accounts_for_groupby_marker() {
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.toggle_groupby_key(); // adds [K] to header: "name [K]" = 8 chars
+        app.autofit_selected_column();
+        // header "name [K]" = 8 chars > data max 7 → width should be 8
+        assert_eq!(app.column_widths[0], 8);
     }
 
     #[test]

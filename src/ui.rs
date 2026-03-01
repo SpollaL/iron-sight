@@ -1,4 +1,4 @@
-use crate::app::{App, Mode, SortDirection};
+use crate::app::{AggFunc, App, Mode};
 use polars::prelude::DataType;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
@@ -6,27 +6,13 @@ use ratatui::widgets::{Cell, Clear, Paragraph, Row, Table};
 use ratatui::Frame;
 
 pub fn ui(frame: &mut Frame, app: &mut App) {
-    let header_cells = Row::new(app.headers.iter().enumerate().map(|(i, header)| {
-        if app.sort_column == Some(i) {
-            let dir = match app.sort_direction {
-                SortDirection::Ascending => '▲',
-                SortDirection::Descending => '▼',
-            };
-            Cell::from(format!("{} {}", header, dir))
-        } else {
-            Cell::from(header.as_str())
-        }
-    }));
+    let header_cells =
+        Row::new((0..app.headers.len()).map(|i| Cell::from(app.header_label(i))));
     let str_columns: Vec<_> = app
         .view
         .get_columns()
         .iter()
-        .map(|col| {
-            col.as_series()
-                .unwrap()
-                .cast(&DataType::String)
-                .unwrap()
-        })
+        .map(|col| col.as_series().unwrap().cast(&DataType::String).unwrap())
         .collect();
     let rows: Vec<Row> = (0..app.view.height())
         .map(|i| {
@@ -97,7 +83,46 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
 fn get_bar(app: &App) -> String {
     match app.mode {
         Mode::Normal => {
-            if !app.search_results.is_empty() {
+            if app.groupby_active {
+                let key_names = app
+                    .saved_headers // original names, since headers is now the result
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| app.groupby_keys.contains(i))
+                    .map(|(_, h)| h.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let agg_summary = app
+                    .groupby_aggs
+                    .iter()
+                    .map(|(i, func)| {
+                        let sym = match func {
+                            AggFunc::Sum => "Σ",
+                            AggFunc::Mean => "μ",
+                            AggFunc::Count => "#",
+                            AggFunc::Min => "↓",
+                            AggFunc::Max => "↑",
+                        };
+                        format!("{}[{}]", app.saved_headers[*i], sym)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!(
+                    " [GROUPED] By: {} | Agg: {} | {} rows ",
+                    key_names,
+                    agg_summary,
+                    app.view.height()
+                )
+            } else if !app.groupby_keys.is_empty() {
+                // setup in progress but not yet executed
+                let key_names = app
+                    .groupby_keys
+                    .iter()
+                    .map(|&i| app.headers[i].as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(" GroupBy: {} | press B to execute ", key_names)
+            } else if !app.search_results.is_empty() {
                 format!(
                     " [{}]/[{}] {} ",
                     app.search_cursor + 1,
