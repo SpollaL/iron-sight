@@ -3,39 +3,36 @@ mod events;
 mod ui;
 
 use app::{App, Config};
-use csv;
 use events::run_app;
-use std::env;
+use polars::prelude::*;
+use std::{env, path::Path};
+
+fn load_dataframe(file_path: &str) -> Result<DataFrame, Box<dyn std::error::Error>> {
+    let ext = Path::new(file_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
+    match ext {
+        "csv" => Ok(CsvReadOptions::default()
+            .try_into_reader_with_file_path(Some(file_path.into()))?
+            .finish()?),
+        "parquet" => Ok(ParquetReader::new(std::fs::File::open(file_path)?).finish()?),
+        _ => Err(format!("Unsupported file format: .{}", ext).into()),
+    }
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::new(env::args()).unwrap_or_else(|err| {
         eprintln!("Problem parsing arguments: {}", err);
         std::process::exit(1);
     });
-    let mut reader = csv::Reader::from_path(&config.file_path).unwrap_or_else(|err| {
-        eprintln!("Problem reading the file: {}", err);
+
+    let df = load_dataframe(&config.file_path).unwrap_or_else(|err| {
+        eprintln!("Problem loading file: {}", err);
         std::process::exit(1);
     });
-    let headers = reader
-        .headers()
-        .unwrap_or_else(|err| {
-            eprintln!("Problem reading the CSV headers: {}", err);
-            std::process::exit(1);
-        })
-        .iter()
-        .map(|header| header.to_string())
-        .collect::<Vec<String>>();
 
-    let data = reader.into_records().map(|result| {
-        result
-            .unwrap_or_else(|err| {
-                eprintln!("Problem parsing the CSV data: {}", err);
-                std::process::exit(1);
-            })
-            .iter()
-            .map(|field| field.to_string())
-            .collect::<Vec<String>>()
-    });
-    let app = App::new(headers, data.collect(), config.file_path);
+    let app = App::new(df, config.file_path);
     ratatui::run(|terminal| run_app(terminal, app))
 }

@@ -1,4 +1,4 @@
-use crate::app::{App, Mode};
+use crate::app::{App, Mode, PlotType};
 use crate::ui::ui;
 use crossterm::event;
 
@@ -37,6 +37,21 @@ pub fn run_app(
                     event::KeyCode::Char('F') => clear_filters(&mut app),
                     event::KeyCode::Char('s') => app.sort_by_column(),
                     event::KeyCode::Char('S') => app.show_stats = !app.show_stats,
+                    event::KeyCode::Char('b') => app.toggle_groupby_key(),
+                    event::KeyCode::Char('a') => app.cycle_groupby_agg(),
+                    event::KeyCode::Char('B') => {
+                        if app.groupby_active {
+                            app.clear_groupby();
+                        } else {
+                            app.apply_groupby();
+                        }
+                    }
+                    event::KeyCode::Char('?') => app.show_help = !app.show_help,
+                    event::KeyCode::Esc => app.show_help = false,
+                    event::KeyCode::Char('p') => {
+                        app.plot_y_col = app.state.selected_column();
+                        app.mode = Mode::PlotPickX;
+                    }
                     _ => {}
                 },
                 Mode::Search => match key.code {
@@ -44,6 +59,36 @@ pub fn run_app(
                     event::KeyCode::Enter => to_first_search_query_result(&mut app),
                     event::KeyCode::Char(c) => push_char_to_search_query(&mut app, c),
                     event::KeyCode::Esc => from_search_to_normal_mode(&mut app),
+                    _ => {}
+                },
+                Mode::PlotPickX => match key.code {
+                    event::KeyCode::Left | event::KeyCode::Char('h') => {
+                        app.state.select_previous_column()
+                    }
+                    event::KeyCode::Right | event::KeyCode::Char('l') => {
+                        app.state.select_next_column()
+                    }
+                    event::KeyCode::Enter => {
+                        app.plot_x_col = app.state.selected_column();
+                        app.mode = Mode::Plot;
+                    }
+                    event::KeyCode::Esc => {
+                        app.plot_y_col = None;
+                        app.mode = Mode::Normal;
+                    }
+                    _ => {}
+                },
+                Mode::Plot => match key.code {
+                    event::KeyCode::Char('t') => {
+                        app.plot_type = match app.plot_type {
+                            PlotType::Line => PlotType::Bar,
+                            PlotType::Bar => PlotType::Line,
+                        };
+                    }
+                    event::KeyCode::Esc | event::KeyCode::Char('p') => {
+                        app.mode = Mode::Normal
+                    }
+                    event::KeyCode::Char('q') => app.should_quit = true,
                     _ => {}
                 },
                 Mode::Filter => match key.code {
@@ -60,16 +105,7 @@ pub fn run_app(
 }
 
 fn autofit_column(app: &mut App) {
-    if let Some(col) = app.state.selected_column() {
-        let header_width = app.headers.get(col).map_or(0, |h| h.len()) as u16;
-        let max_data = app
-            .records
-            .iter()
-            .map(|r| r.get(col).map_or(0, |f| f.len()))
-            .max()
-            .unwrap_or(0) as u16;
-        app.column_widths[col] = max_data.max(header_width);
-    }
+    app.autofit_selected_column();
 }
 
 fn enter_search_mode(app: &mut App) {
@@ -138,8 +174,8 @@ fn from_filter_to_normal_mode(app: &mut App) {
 
 fn clear_filters(app: &mut App) {
     app.filter_input = String::new();
-    app.filter_indices = Vec::new();
     app.filters = Vec::new();
+    app.update_filter();
 }
 
 fn go_to_next_search_result(app: &mut App) {
