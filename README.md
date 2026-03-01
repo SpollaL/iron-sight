@@ -68,4 +68,5 @@ iron-sight <path-to-file.csv>
 | Key | Action |
 |-----|--------|
 | `_` | Autofit current column width |
+| `?` | Toggle help popup |
 | `q` | Quit |

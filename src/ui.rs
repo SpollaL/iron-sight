@@ -1,4 +1,42 @@
 use crate::app::{AggFunc, App, Mode};
+
+const HELP_TEXT: &str = "\
+ Navigation
+  j / ↓       Move down
+  k / ↑       Move up
+  h / ←       Move left
+  l / →       Move right
+  g / Home    First row
+  G / End     Last row
+  PageDown    Scroll down 20 rows
+  PageUp      Scroll up 20 rows
+
+ Search
+  /           Enter search mode
+  Enter       Jump to first match
+  n / N       Next / previous match
+  Esc         Exit search
+
+ Filter
+  f           Enter filter mode (current column)
+  Enter       Apply filter
+  F           Clear all filters
+  Esc         Discard input
+
+ Sort
+  s           Sort by column (toggles asc / desc)
+
+ Group By
+  b           Toggle group-by key [K]
+  a           Cycle aggregation  [Σ μ # ↓ ↑]
+  B           Execute / clear group-by
+
+ Other
+  _           Autofit column width
+  S           Toggle column stats popup
+  ?           Toggle this help
+  q           Quit\
+";
 use polars::prelude::DataType;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
@@ -73,6 +111,18 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
             .block(
                 ratatui::widgets::Block::default()
                     .title(" Column Stats ")
+                    .borders(ratatui::widgets::Borders::ALL),
+            )
+            .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+        frame.render_widget(popup, area);
+    }
+    if app.show_help {
+        let area = centered_rect(55, 80, frame.area());
+        frame.render_widget(Clear, area);
+        let popup = Paragraph::new(HELP_TEXT)
+            .block(
+                ratatui::widgets::Block::default()
+                    .title(" Help — press ? or Esc to close ")
                     .borders(ratatui::widgets::Borders::ALL),
             )
             .style(Style::default().bg(Color::DarkGray).fg(Color::White));

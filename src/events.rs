@@ -46,6 +46,8 @@ pub fn run_app(
                             app.apply_groupby();
                         }
                     }
+                    event::KeyCode::Char('?') => app.show_help = !app.show_help,
+                    event::KeyCode::Esc => app.show_help = false,
                     _ => {}
                 },
                 Mode::Search => match key.code {
