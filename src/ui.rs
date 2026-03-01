@@ -1,102 +1,96 @@
 use crate::app::{AggFunc, App, Mode};
-
-const HELP_TEXT: &str = "\
- Navigation
-  j / ↓       Move down
-  k / ↑       Move up
-  h / ←       Move left
-  l / →       Move right
-  g / Home    First row
-  G / End     Last row
-  PageDown    Scroll down 20 rows
-  PageUp      Scroll up 20 rows
-
- Search
-  /           Enter search mode
-  Enter       Jump to first match
-  n / N       Next / previous match
-  Esc         Exit search
-
- Filter
-  f           Enter filter mode (current column)
-  Enter       Apply filter
-  F           Clear all filters
-  Esc         Discard input
-
- Sort
-  s           Sort by column (toggles asc / desc)
-
- Group By
-  b           Toggle group-by key [K]
-  a           Cycle aggregation  [Σ μ # ↓ ↑]
-  B           Execute / clear group-by
-
- Other
-  _           Autofit column width
-  S           Toggle column stats popup
-  ?           Toggle this help
-  q           Quit\
-";
+use catppuccin::PALETTE;
 use polars::prelude::DataType;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style, Stylize};
-use ratatui::widgets::{Cell, Clear, Paragraph, Row, Table};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::{Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Table};
 use ratatui::Frame;
 
+fn c(color: catppuccin::Color) -> Color {
+    Color::Rgb(color.rgb.r, color.rgb.g, color.rgb.b)
+}
+
 pub fn ui(frame: &mut Frame, app: &mut App) {
-    let header_cells =
-        Row::new((0..app.headers.len()).map(|i| Cell::from(app.header_label(i))));
+    let m = &PALETTE.mocha.colors;
+
+    let header_cells = Row::new((0..app.headers.len()).map(|i| {
+        Cell::from(app.header_label(i)).style(
+            Style::default()
+                .fg(c(m.lavender))
+                .add_modifier(Modifier::BOLD),
+        )
+    }))
+    .style(Style::default().bg(c(m.surface0)));
+
     let str_columns: Vec<_> = app
         .view
         .get_columns()
         .iter()
         .map(|col| col.as_series().unwrap().cast(&DataType::String).unwrap())
         .collect();
+
     let rows: Vec<Row> = (0..app.view.height())
         .map(|i| {
+            let bg = if i % 2 == 0 { c(m.base) } else { c(m.mantle) };
             Row::new(
                 str_columns
                     .iter()
                     .map(|s| Cell::from(s.str().unwrap().get(i).unwrap_or("").to_string()))
                     .collect::<Vec<Cell>>(),
             )
+            .style(Style::default().bg(bg).fg(c(m.text)))
         })
         .collect();
+
     let widths: Vec<Constraint> = app
         .column_widths
         .iter()
         .map(|w| Constraint::Length(*w))
         .collect();
+
     let table = Table::new(rows, widths)
-        .header(header_cells.bold().bottom_margin(1))
+        .header(header_cells.bottom_margin(1))
         .block(
-            ratatui::widgets::Block::default()
-                .title("CSV Viewer")
-                .borders(ratatui::widgets::Borders::ALL),
+            Block::default()
+                .title(format!(" {} ", app.file_path))
+                .title_style(
+                    Style::default()
+                        .fg(c(m.blue))
+                        .add_modifier(Modifier::BOLD),
+                )
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(c(m.overlay0)))
+                .style(Style::default().bg(c(m.base))),
         )
-        .row_highlight_style(Style::default().bg(Color::DarkGray))
-        .column_highlight_style(Style::default().bg(Color::DarkGray))
+        .row_highlight_style(Style::default().bg(c(m.surface0)))
+        .column_highlight_style(Style::default().bg(c(m.surface1)))
         .cell_highlight_style(
             Style::default()
-                .bg(Color::Blue)
-                .fg(Color::White)
+                .bg(c(m.blue))
+                .fg(c(m.base))
                 .add_modifier(Modifier::BOLD),
         );
+
     let chunks = Layout::default()
         .direction(ratatui::layout::Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(frame.area());
-    let bar = get_bar(app);
-    let bar = Paragraph::new(bar).style(Style::default().bg(Color::DarkGray).fg(Color::White));
+
+    let (bar_text, bar_style) = get_bar(app, m);
+    let bar = Paragraph::new(bar_text).style(bar_style);
+
     frame.render_stateful_widget(table, chunks[0], &mut app.state);
     frame.render_widget(bar, chunks[1]);
+
     if app.show_stats {
         let col = app.state.selected_column().unwrap_or(0);
         let stats = app.compute_stats(col);
         let area = centered_rect(40, 40, frame.area());
         frame.render_widget(Clear, area);
         let content = format!(
-            "Count: {}\nMin:   {}\nMax:   {}\nMean:  {}\nMedian: {}",
+            "\n Count:  {}\n Min:    {}\n Max:    {}\n Mean:   {}\n Median: {}",
             stats.count,
             stats.min,
             stats.max,
@@ -109,33 +103,62 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
         );
         let popup = Paragraph::new(content)
             .block(
-                ratatui::widgets::Block::default()
+                Block::default()
                     .title(" Column Stats ")
-                    .borders(ratatui::widgets::Borders::ALL),
+                    .title_style(
+                        Style::default()
+                            .fg(c(m.mauve))
+                            .add_modifier(Modifier::BOLD),
+                    )
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(c(m.mauve))),
             )
-            .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+            .style(Style::default().bg(c(m.surface0)).fg(c(m.text)));
         frame.render_widget(popup, area);
     }
+
     if app.show_help {
         let area = centered_rect(55, 80, frame.area());
         frame.render_widget(Clear, area);
-        let popup = Paragraph::new(HELP_TEXT)
+        let popup = Paragraph::new(help_text(m))
             .block(
-                ratatui::widgets::Block::default()
+                Block::default()
                     .title(" Help — press ? or Esc to close ")
-                    .borders(ratatui::widgets::Borders::ALL),
+                    .title_style(
+                        Style::default()
+                            .fg(c(m.lavender))
+                            .add_modifier(Modifier::BOLD),
+                    )
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(c(m.lavender))),
             )
-            .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+            .style(Style::default().bg(c(m.surface0)).fg(c(m.text)));
         frame.render_widget(popup, area);
     }
 }
 
-fn get_bar(app: &App) -> String {
+fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
     match app.mode {
+        Mode::Search => (
+            format!(" /{}_ ", app.search_query),
+            Style::default()
+                .bg(c(m.yellow))
+                .fg(c(m.base))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Mode::Filter => (
+            format!(" f {}_ ", app.filter_input),
+            Style::default()
+                .bg(c(m.sapphire))
+                .fg(c(m.base))
+                .add_modifier(Modifier::BOLD),
+        ),
         Mode::Normal => {
-            if app.groupby_active {
+            let (text, fg) = if app.groupby_active {
                 let key_names = app
-                    .saved_headers // original names, since headers is now the result
+                    .saved_headers
                     .iter()
                     .enumerate()
                     .filter(|(i, _)| app.groupby_keys.contains(i))
@@ -157,27 +180,35 @@ fn get_bar(app: &App) -> String {
                     })
                     .collect::<Vec<_>>()
                     .join(" ");
-                format!(
-                    " [GROUPED] By: {} | Agg: {} | {} rows ",
-                    key_names,
-                    agg_summary,
-                    app.view.height()
+                (
+                    format!(
+                        " ◆ GROUPED  By: {} | Agg: {} | {} rows ",
+                        key_names,
+                        agg_summary,
+                        app.view.height()
+                    ),
+                    c(m.yellow),
                 )
             } else if !app.groupby_keys.is_empty() {
-                // setup in progress but not yet executed
                 let key_names = app
                     .groupby_keys
                     .iter()
                     .map(|&i| app.headers[i].as_str())
                     .collect::<Vec<_>>()
                     .join(", ");
-                format!(" GroupBy: {} | press B to execute ", key_names)
+                (
+                    format!(" GroupBy: {} | press B to execute ", key_names),
+                    c(m.peach),
+                )
             } else if !app.search_results.is_empty() {
-                format!(
-                    " [{}]/[{}] {} ",
-                    app.search_cursor + 1,
-                    app.search_results.len(),
-                    app.search_query
+                (
+                    format!(
+                        " [{}/{}]  {} ",
+                        app.search_cursor + 1,
+                        app.search_results.len(),
+                        app.search_query
+                    ),
+                    c(m.sky),
                 )
             } else if !app.filters.is_empty() {
                 let filter_summary = app
@@ -188,33 +219,93 @@ fn get_bar(app: &App) -> String {
                     })
                     .collect::<Vec<_>>()
                     .join(" ");
-                format!(
-                    " {} Row {}/{} | Col {}/{} | {} ",
-                    filter_summary,
-                    app.state.selected().map_or(0, |i| i + 1),
-                    app.view.height(),
-                    app.state.selected_column().map_or(0, |i| i + 1),
-                    app.headers.len(),
-                    app.file_path
+                (
+                    format!(
+                        " {} | Row {}/{} | Col {}/{} | {} ",
+                        filter_summary,
+                        app.state.selected().map_or(0, |i| i + 1),
+                        app.view.height(),
+                        app.state.selected_column().map_or(0, |i| i + 1),
+                        app.headers.len(),
+                        app.file_path
+                    ),
+                    c(m.teal),
                 )
             } else {
-                format!(
-                    " Row {}/{} | Col {}/{} | {} ",
-                    app.state.selected().map_or(0, |i| i + 1),
-                    app.view.height(),
-                    app.state.selected_column().map_or(0, |i| i + 1),
-                    app.headers.len(),
-                    app.file_path
+                (
+                    format!(
+                        " Row {}/{} | Col {}/{} | {}  ? help ",
+                        app.state.selected().map_or(0, |i| i + 1),
+                        app.view.height(),
+                        app.state.selected_column().map_or(0, |i| i + 1),
+                        app.headers.len(),
+                        app.file_path
+                    ),
+                    c(m.subtext1),
                 )
-            }
-        }
-        Mode::Search => {
-            format!("/{}_", app.search_query,)
-        }
-        Mode::Filter => {
-            format!("f {}_", app.filter_input)
+            };
+            (text, Style::default().bg(c(m.surface0)).fg(fg))
         }
     }
+}
+
+fn help_text(m: &catppuccin::FlavorColors) -> Text<'static> {
+    let section = |title: &'static str| {
+        Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                title,
+                Style::default()
+                    .fg(c(m.lavender))
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    };
+    let key = |k: &'static str, desc: &'static str| {
+        Line::from(vec![
+            Span::styled(format!("  {:<14}", k), Style::default().fg(c(m.blue))),
+            Span::styled(desc, Style::default().fg(c(m.text))),
+        ])
+    };
+    Text::from(vec![
+        Line::raw(""),
+        section("Navigation"),
+        key("j / ↓", "Move down"),
+        key("k / ↑", "Move up"),
+        key("h / ←", "Move left"),
+        key("l / →", "Move right"),
+        key("g / Home", "First row"),
+        key("G / End", "Last row"),
+        key("PageDown", "Scroll down 20 rows"),
+        key("PageUp", "Scroll up 20 rows"),
+        Line::raw(""),
+        section("Search"),
+        key("/", "Enter search mode"),
+        key("Enter", "Jump to first match"),
+        key("n / N", "Next / previous match"),
+        key("Esc", "Exit search"),
+        Line::raw(""),
+        section("Filter"),
+        key("f", "Enter filter mode (current column)"),
+        key("Enter", "Apply filter"),
+        key("F", "Clear all filters"),
+        key("Esc", "Discard input"),
+        Line::raw(""),
+        section("Sort"),
+        key("s", "Sort by column (toggles asc / desc)"),
+        Line::raw(""),
+        section("Group By"),
+        key("b", "Toggle group-by key [K]"),
+        key("a", "Cycle aggregation  [Σ μ # ↓ ↑]"),
+        key("B", "Execute / clear group-by"),
+        Line::raw(""),
+        section("Other"),
+        key("_", "Autofit column width"),
+        key("S", "Toggle column stats popup"),
+        key("?", "Toggle this help"),
+        key("q", "Quit"),
+        Line::raw(""),
+    ])
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
