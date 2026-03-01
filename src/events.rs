@@ -1,4 +1,4 @@
-use crate::app::{App, Mode};
+use crate::app::{App, Mode, PlotType};
 use crate::ui::ui;
 use crossterm::event;
 
@@ -48,6 +48,10 @@ pub fn run_app(
                     }
                     event::KeyCode::Char('?') => app.show_help = !app.show_help,
                     event::KeyCode::Esc => app.show_help = false,
+                    event::KeyCode::Char('p') => {
+                        app.plot_y_col = app.state.selected_column();
+                        app.mode = Mode::PlotPickX;
+                    }
                     _ => {}
                 },
                 Mode::Search => match key.code {
@@ -55,6 +59,36 @@ pub fn run_app(
                     event::KeyCode::Enter => to_first_search_query_result(&mut app),
                     event::KeyCode::Char(c) => push_char_to_search_query(&mut app, c),
                     event::KeyCode::Esc => from_search_to_normal_mode(&mut app),
+                    _ => {}
+                },
+                Mode::PlotPickX => match key.code {
+                    event::KeyCode::Left | event::KeyCode::Char('h') => {
+                        app.state.select_previous_column()
+                    }
+                    event::KeyCode::Right | event::KeyCode::Char('l') => {
+                        app.state.select_next_column()
+                    }
+                    event::KeyCode::Enter => {
+                        app.plot_x_col = app.state.selected_column();
+                        app.mode = Mode::Plot;
+                    }
+                    event::KeyCode::Esc => {
+                        app.plot_y_col = None;
+                        app.mode = Mode::Normal;
+                    }
+                    _ => {}
+                },
+                Mode::Plot => match key.code {
+                    event::KeyCode::Char('t') => {
+                        app.plot_type = match app.plot_type {
+                            PlotType::Line => PlotType::Bar,
+                            PlotType::Bar => PlotType::Line,
+                        };
+                    }
+                    event::KeyCode::Esc | event::KeyCode::Char('p') => {
+                        app.mode = Mode::Normal
+                    }
+                    event::KeyCode::Char('q') => app.should_quit = true,
                     _ => {}
                 },
                 Mode::Filter => match key.code {

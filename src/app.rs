@@ -23,6 +23,14 @@ pub enum Mode {
     Search,
     Normal,
     Filter,
+    PlotPickX,
+    Plot,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PlotType {
+    Line,
+    Bar,
 }
 
 #[derive(Debug)]
@@ -71,6 +79,9 @@ pub struct App {
     pub groupby_active: bool,
     pub saved_headers: Vec<String>,
     pub saved_column_widths: Vec<u16>,
+    pub plot_y_col: Option<usize>,
+    pub plot_x_col: Option<usize>,
+    pub plot_type: PlotType,
 }
 
 impl App {
@@ -105,6 +116,9 @@ impl App {
             groupby_active: false,
             saved_headers: Vec::new(),
             saved_column_widths: Vec::new(),
+            plot_y_col: None,
+            plot_x_col: None,
+            plot_type: PlotType::Line,
         };
         if !app.df.is_empty() {
             app.state.select(Some(0));
@@ -363,6 +377,13 @@ impl App {
         }
     }
 
+    pub fn plot_type_label(&self) -> &str {
+        match self.plot_type {
+            PlotType::Line => "Line",
+            PlotType::Bar => "Bar",
+        }
+    }
+
     pub fn clear_groupby(&mut self) {
         self.headers = self.saved_headers.clone();
         self.column_widths = self.saved_column_widths.clone();
@@ -474,5 +495,37 @@ mod tests {
         assert_eq!(get_str(&app, "name", 0), "Charlie");
         assert_eq!(get_str(&app, "name", 1), "Bob");
         assert_eq!(get_str(&app, "name", 2), "Alice");
+    }
+}
+
+#[cfg(test)]
+mod plot_tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_plot_basic() {
+        let df = df! {
+            "x" => [1i32, 2i32, 3i32],
+            "y" => [10i32, 20i32, 30i32],
+        }.unwrap();
+        let app = App::new(df, "test.csv".to_string());
+        let (data, x_is_categorical) = crate::ui::extract_plot_data_pub(&app, 0, 1);
+        assert!(!data.is_empty(), "both numeric: data should not be empty");
+        assert_eq!(data.len(), 3);
+        assert_eq!(data[0], (1.0, 10.0));
+        assert!(!x_is_categorical, "numeric x: not categorical");
+    }
+
+    #[test]
+    fn test_extract_plot_string_x() {
+        let df = df! {
+            "name" => ["alpha", "beta", "gamma"],
+            "qty"  => [10i32, 20i32, 30i32],
+        }.unwrap();
+        let app = App::new(df, "test.csv".to_string());
+        let (data, x_is_categorical) = crate::ui::extract_plot_data_pub(&app, 0, 1);
+        assert!(!data.is_empty(), "string x: should use row index");
+        assert_eq!(data[0], (0.0, 10.0));
+        assert!(x_is_categorical, "string x: should be categorical");
     }
 }
