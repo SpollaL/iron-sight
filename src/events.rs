@@ -48,7 +48,8 @@ pub fn run_app(
                     }
                     event::KeyCode::Char('?') => app.show_help = !app.show_help,
                     event::KeyCode::Esc => app.show_help = false,
-                    event::KeyCode::Char('p') => {
+                    event::KeyCode::Char('=') => app.autofit_all_columns(),
+                    event::KeyCode::Char('p') if !app.df.is_empty() => {
                         app.plot_y_col = app.state.selected_column();
                         app.mode = Mode::PlotPickX;
                     }

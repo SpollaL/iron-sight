@@ -1,5 +1,6 @@
 use polars::prelude::*;
 use ratatui::widgets::TableState;
+use std::collections::HashMap;
 
 const DEFAULT_COLUMN_WIDTH: u16 = 15;
 
@@ -48,6 +49,7 @@ pub enum AggFunc {
     Max,
 }
 
+#[derive(Default)]
 pub struct ColumnStats {
     pub count: usize,
     pub min: String,
@@ -75,7 +77,7 @@ pub struct App {
     pub show_stats: bool,
     pub show_help: bool,
     pub groupby_keys: Vec<usize>,
-    pub groupby_aggs: Vec<(usize, AggFunc)>,
+    pub groupby_aggs: HashMap<usize, AggFunc>,
     pub groupby_active: bool,
     pub saved_headers: Vec<String>,
     pub saved_column_widths: Vec<u16>,
@@ -112,7 +114,7 @@ impl App {
             show_stats: false,
             show_help: false,
             groupby_keys: Vec::new(),
-            groupby_aggs: Vec::new(),
+            groupby_aggs: HashMap::new(),
             groupby_active: false,
             saved_headers: Vec::new(),
             saved_column_widths: Vec::new(),
@@ -129,27 +131,32 @@ impl App {
 
     pub fn update_search(&mut self) {
         let current_column = self.state.selected_column().unwrap_or(0);
+        if self.headers.is_empty() || current_column >= self.headers.len() || self.view.is_empty() {
+            self.search_results.clear();
+            return;
+        }
         let col_name = &self.headers[current_column];
         let query = self.search_query.to_lowercase();
-
-        let series = self
+        let Some(series) = self
             .view
             .column(col_name)
-            .unwrap()
-            .as_series()
-            .unwrap()
-            .cast(&DataType::String)
-            .unwrap();
-
+            .ok()
+            .and_then(|c| c.as_series())
+            .and_then(|s| s.cast(&DataType::String).ok())
+        else {
+            self.search_results.clear();
+            return;
+        };
         self.search_results = series
             .str()
-            .unwrap()
-            .into_iter()
-            .enumerate()
-            .filter(|(_, val)| val.map_or(false, |s| s.to_lowercase().contains(&query)))
-            .map(|(i, _)| i)
-            .collect();
-
+            .map(|ca| {
+                ca.into_iter()
+                    .enumerate()
+                    .filter(|(_, v)| v.is_some_and(|s| s.to_lowercase().contains(&query)))
+                    .map(|(i, _)| i)
+                    .collect()
+            })
+            .unwrap_or_default();
         self.search_cursor = 0;
     }
 
@@ -192,6 +199,9 @@ impl App {
         } else {
             filtered
         };
+        if !self.search_query.is_empty() {
+            self.update_search();
+        }
     }
 
     pub fn sort_by_column(&mut self) {
@@ -212,6 +222,9 @@ impl App {
             Ok(sorted) => sorted,
             Err(_) => self.view.clone(),
         };
+        if !self.search_query.is_empty() {
+            self.update_search();
+        }
     }
 
     pub fn autofit_selected_column(&mut self) {
@@ -240,6 +253,31 @@ impl App {
         }
     }
 
+    pub fn autofit_all_columns(&mut self) {
+        let cols: Vec<usize> = (0..self.headers.len()).collect();
+        for col_idx in cols {
+            let label = self.header_label(col_idx);
+            let header_width = label.chars().count() as u16;
+            let col_name = self.headers[col_idx].clone();
+            let max_data = self
+                .view
+                .column(&col_name)
+                .ok()
+                .and_then(|col| {
+                    let cast = col.as_series()?.cast(&DataType::String).ok()?;
+                    cast.str()
+                        .ok()?
+                        .into_iter()
+                        .flatten()
+                        .map(|s| s.chars().count())
+                        .max()
+                        .map(|n| n as u16)
+                })
+                .unwrap_or(0);
+            self.column_widths[col_idx] = max_data.max(header_width);
+        }
+    }
+
     pub fn header_label(&self, col_idx: usize) -> String {
         let base = &self.headers[col_idx];
         let label = if self.sort_column == Some(col_idx) {
@@ -254,7 +292,7 @@ impl App {
         };
         if self.groupby_keys.contains(&col_idx) {
             format!("{} [K]", label)
-        } else if let Some((_, func)) = self.groupby_aggs.iter().find(|(j, _)| *j == col_idx) {
+        } else if let Some(func) = self.groupby_aggs.get(&col_idx) {
             let sym = match func {
                 AggFunc::Sum => "Σ",
                 AggFunc::Mean => "μ",
@@ -269,9 +307,13 @@ impl App {
     }
 
     pub fn compute_stats(&mut self, col: usize) -> ColumnStats {
+        if col >= self.headers.len() {
+            return ColumnStats::default();
+        }
         let col_name = &self.headers[col];
-        let series = self.view.column(col_name).unwrap();
-
+        let Ok(series) = self.view.column(col_name) else {
+            return ColumnStats::default();
+        };
         let count = series.len();
         let min = series
             .min_reduce()
@@ -283,16 +325,11 @@ impl App {
             .ok()
             .map(|s| s.value().to_string())
             .unwrap_or_default();
-        let mean = series.as_series().unwrap().mean();
-        let median = series.as_series().unwrap().median();
-
-        ColumnStats {
-            count,
-            min,
-            max,
-            mean,
-            median,
-        }
+        let (mean, median) = series
+            .as_series()
+            .map(|s| (s.mean(), s.median()))
+            .unwrap_or((None, None));
+        ColumnStats { count, min, max, mean, median }
     }
 
     pub fn toggle_groupby_key(&mut self) {
@@ -301,7 +338,7 @@ impl App {
             self.groupby_keys.remove(pos);
         } else {
             self.groupby_keys.push(col);
-            self.groupby_aggs.retain(|(i, _)| *i != col);
+            self.groupby_aggs.remove(&col);
         }
     }
 
@@ -310,21 +347,18 @@ impl App {
         if self.groupby_keys.contains(&col) {
             return;
         };
-        if let Some(pos) = self.groupby_aggs.iter().position(|(i, _)| *i == col) {
-            let next = match self.groupby_aggs[pos].1 {
-                AggFunc::Sum => Some(AggFunc::Mean),
-                AggFunc::Mean => Some(AggFunc::Count),
-                AggFunc::Count => Some(AggFunc::Min),
-                AggFunc::Min => Some(AggFunc::Max),
-                AggFunc::Max => None,
-            };
-            self.groupby_aggs.remove(pos);
-            if let Some(func) = next {
-                self.groupby_aggs.push((col, func));
-            };
-        } else {
-            self.groupby_aggs.push((col, AggFunc::Sum));
-        }
+        let next = match self.groupby_aggs.get(&col) {
+            None => Some(AggFunc::Sum),
+            Some(AggFunc::Sum) => Some(AggFunc::Mean),
+            Some(AggFunc::Mean) => Some(AggFunc::Count),
+            Some(AggFunc::Count) => Some(AggFunc::Min),
+            Some(AggFunc::Min) => Some(AggFunc::Max),
+            Some(AggFunc::Max) => None,
+        };
+        match next {
+            Some(f) => { self.groupby_aggs.insert(col, f); }
+            None => { self.groupby_aggs.remove(&col); }
+        };
     }
     pub fn apply_groupby(&mut self) {
         if self.groupby_keys.is_empty() || self.groupby_aggs.is_empty() {
@@ -388,7 +422,7 @@ impl App {
         self.headers = self.saved_headers.clone();
         self.column_widths = self.saved_column_widths.clone();
         self.groupby_keys = Vec::new();
-        self.groupby_aggs = Vec::new();
+        self.groupby_aggs = HashMap::new();
         self.groupby_active = false;
         self.sort_column = None;
         self.search_results = Vec::new();
@@ -495,6 +529,79 @@ mod tests {
         assert_eq!(get_str(&app, "name", 0), "Charlie");
         assert_eq!(get_str(&app, "name", 1), "Bob");
         assert_eq!(get_str(&app, "name", 2), "Alice");
+    }
+
+    #[test]
+    fn test_empty_dataframe_new() {
+        let df = DataFrame::empty();
+        let app = App::new(df, "empty.csv".to_string());
+        assert!(app.state.selected().is_none());
+        assert!(app.state.selected_column().is_none());
+        assert!(app.headers.is_empty());
+    }
+
+    #[test]
+    fn test_update_search_on_empty_view() {
+        let df = df! {
+            "name" => ["Alice", "Bob"],
+            "age"  => [30i64, 25],
+        }
+        .unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+        // Filter to zero rows then search — must not panic
+        app.filters = vec![(0, "zzznomatch".to_string())];
+        app.update_filter();
+        app.search_query = "alice".to_string();
+        app.update_search();
+        assert!(app.search_results.is_empty());
+    }
+
+    #[test]
+    fn test_compute_stats_empty_view() {
+        let df = df! {
+            "val" => [1i64, 2, 3],
+        }
+        .unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+        app.filters = vec![(0, "zzznomatch".to_string())];
+        app.update_filter();
+        // Should return default stats without panicking
+        let stats = app.compute_stats(0);
+        assert_eq!(stats.count, 0);
+    }
+
+    #[test]
+    fn test_filter_to_zero_rows() {
+        let mut app = make_app();
+        app.filters = vec![(0, "zzznomatch".to_string())];
+        app.update_filter();
+        assert_eq!(app.view.height(), 0);
+    }
+
+    #[test]
+    fn test_autofit_all_columns() {
+        let mut app = make_app();
+        app.autofit_all_columns();
+        // "name" col: max("Alice"=5, "Bob"=3, "Charlie"=7) = 7
+        assert_eq!(app.column_widths[0], 7);
+        // "age" col: max("30"=2, "25"=2, "35"=2) = 3, header "age" = 3
+        assert_eq!(app.column_widths[1], 3);
+    }
+
+    #[test]
+    fn test_search_after_sort_not_stale() {
+        let mut app = make_app();
+        app.search_query = "alice".to_string();
+        app.update_search();
+        let results_before = app.search_results.clone();
+        assert!(!results_before.is_empty());
+        // Sort descending — Alice moves to row 2
+        app.state.select_column(Some(0));
+        app.sort_by_column();
+        app.sort_by_column();
+        // Search results should be re-computed to point to the new row index
+        assert!(!app.search_results.is_empty());
+        assert_ne!(app.search_results, results_before);
     }
 }
 

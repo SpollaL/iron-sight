@@ -1,6 +1,6 @@
 use crate::app::{AggFunc, App, Mode, PlotType};
 use catppuccin::PALETTE;
-use polars::prelude::DataType;
+use polars::prelude::{DataType, Series};
 use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols;
@@ -8,6 +8,9 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Axis, Block, BorderType, Borders, Cell, Chart, Clear, Dataset, GraphType,
     Paragraph, Row, Table};
 use ratatui::Frame;
+
+const Y_AXIS_PADDING: f64 = 0.05;
+const CHART_BORDER_WIDTH: u16 = 1;
 
 fn c(color: catppuccin::Color) -> Color {
     Color::Rgb(color.rgb.r, color.rgb.g, color.rgb.b)
@@ -30,11 +33,11 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     }))
     .style(Style::default().bg(c(m.surface0)));
 
-    let str_columns: Vec<_> = app
+    let str_columns: Vec<Option<Series>> = app
         .view
         .get_columns()
         .iter()
-        .map(|col| col.as_series().unwrap().cast(&DataType::String).unwrap())
+        .map(|col| col.as_series().and_then(|s| s.cast(&DataType::String).ok()))
         .collect();
 
     let rows: Vec<Row> = (0..app.view.height())
@@ -43,7 +46,15 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
             Row::new(
                 str_columns
                     .iter()
-                    .map(|s| Cell::from(s.str().unwrap().get(i).unwrap_or("").to_string()))
+                    .map(|s| {
+                        Cell::from(
+                            s.as_ref()
+                                .and_then(|series| series.str().ok())
+                                .and_then(|ca| ca.get(i))
+                                .unwrap_or("")
+                                .to_string(),
+                        )
+                    })
                     .collect::<Vec<Cell>>(),
             )
             .style(Style::default().bg(bg).fg(c(m.text)))
@@ -187,8 +198,10 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                     .map(|(_, h)| h.as_str())
                     .collect::<Vec<_>>()
                     .join(", ");
-                let agg_summary = app
-                    .groupby_aggs
+                let mut agg_entries: Vec<(usize, &AggFunc)> =
+                    app.groupby_aggs.iter().map(|(i, f)| (*i, f)).collect();
+                agg_entries.sort_by_key(|(i, _)| *i);
+                let agg_summary = agg_entries
                     .iter()
                     .map(|(i, func)| {
                         let sym = match func {
@@ -330,6 +343,7 @@ fn help_text(m: &catppuccin::FlavorColors) -> Text<'static> {
         Line::raw(""),
         section("Other"),
         key("_", "Autofit column width"),
+        key("=", "Autofit all columns"),
         key("S", "Toggle column stats popup"),
         key("?", "Toggle this help"),
         key("q", "Quit"),
@@ -399,7 +413,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
     let y_min = data.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
     let y_max = data.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
 
-    let y_pad = (y_max - y_min).abs() * 0.05;
+    let y_pad = (y_max - y_min).abs() * Y_AXIS_PADDING;
     let y_bounds = [y_min - y_pad, y_max + y_pad];
 
     let dataset = Dataset::default()
@@ -530,7 +544,7 @@ fn render_vertical_x_labels(
     // The plot's x range covers the inner chart width minus the left border.
     // No explicit y-axis labels → inner area starts right after the left border.
     let plot_x = chart_area.x + 1;
-    let plot_w = chart_area.width.saturating_sub(2);
+    let plot_w = chart_area.width.saturating_sub(CHART_BORDER_WIDTH * 2);
     if plot_w == 0 {
         return;
     }
