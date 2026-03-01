@@ -9,5 +9,5 @@ rust-version = "1.75"
 
 [dependencies]
 crossterm = "0.29.0"
-csv = "1.4.0"
 ratatui = "0.30.0"
+polars = { version = "0.46", features = ["csv", "parquet", "lazy", "strings", "regex"] }

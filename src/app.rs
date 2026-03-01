@@ -1,3 +1,4 @@
+use polars::prelude::*;
 use ratatui::widgets::TableState;
 
 const DEFAULT_COLUMN_WIDTH: u16 = 15;
@@ -39,8 +40,9 @@ pub struct ColumnStats {
 }
 
 pub struct App {
-    pub headers: Vec<String>,
-    pub records: Vec<Vec<String>>,
+    pub df: DataFrame,        // original data
+    pub view: DataFrame,      // current filtered/sorted result
+    pub headers: Vec<String>, // column names for display
     pub state: TableState,
     pub should_quit: bool,
     pub file_path: String,
@@ -50,7 +52,6 @@ pub struct App {
     pub search_results: Vec<usize>,
     pub search_cursor: usize,
     pub filters: Vec<(usize, String)>,
-    pub filter_indices: Vec<usize>,
     pub filter_input: String,
     pub sort_column: Option<usize>,
     pub sort_direction: SortDirection,
@@ -58,11 +59,18 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(headers: Vec<String>, records: Vec<Vec<String>>, file_path: String) -> App {
+    pub fn new(df: DataFrame, file_path: String) -> App {
+        let headers: Vec<String> = df
+            .get_column_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let column_count = headers.len();
+        let view = df.clone();
         let mut app = App {
-            headers,
-            records,
+            df: df,
+            view: view,
+            headers: headers,
             state: TableState::default(),
             should_quit: false,
             file_path,
@@ -72,13 +80,12 @@ impl App {
             search_results: Vec::new(),
             search_cursor: 0,
             filter_input: String::new(),
-            filter_indices: Vec::new(),
             filters: Vec::new(),
             sort_column: None,
             sort_direction: SortDirection::Ascending,
             show_stats: false,
         };
-        if !app.records.is_empty() {
+        if !app.df.is_empty() {
             app.state.select(Some(0));
             app.state.select_column(Some(0));
         }
@@ -87,40 +94,73 @@ impl App {
 
     pub fn update_search(&mut self) {
         let current_column = self.state.selected_column().unwrap_or(0);
+        let col_name = &self.headers[current_column];
         let query = self.search_query.to_lowercase();
-        self.search_results = self
-            .records
-            .iter()
+
+        let series = self
+            .view
+            .column(col_name)
+            .unwrap()
+            .as_series()
+            .unwrap()
+            .cast(&DataType::String)
+            .unwrap();
+
+        self.search_results = series
+            .str()
+            .unwrap()
+            .into_iter()
             .enumerate()
-            .filter(|(_, r)| {
-                r.get(current_column)
-                    .map_or(false, |f| f.to_lowercase().contains(&query))
+            .filter(|(_, val)| {
+                val.map_or(false, |s| s.to_lowercase().contains(&query))
             })
             .map(|(i, _)| i)
             .collect();
+
         self.search_cursor = 0;
     }
 
     pub fn update_filter(&mut self) {
-        let col = self.state.selected_column().unwrap_or(0);
-        let input = self.filter_input.to_lowercase();
-        self.filter_indices = self
-            .records
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| {
-                self.filters
-                    .iter()
-                    .all(|(fc, fq)| r.get(*fc).map_or(false, |f| f.to_lowercase().contains(fq)))
-                    && (input.is_empty()
-                        || r.get(col)
-                            .map_or(false, |f| f.to_lowercase().contains(&input)))
-            })
-            .map(|(i, _)| i)
-            .collect();
-        if !self.search_results.is_empty() {
-            self.update_search();
+        let mut mask = lit(true);
+        for (colidx, query) in &self.filters {
+            let col_name = &self.headers[*colidx];
+            mask = mask.and(
+                col(col_name)
+                    .cast(DataType::String)
+                    .str()
+                    .contains(lit(query.as_str()), false),
+            );
         }
+        if !self.filter_input.is_empty() {
+            let col_name = &self.headers[self.state.selected_column().unwrap_or(0)];
+            mask = mask.and(
+                col(col_name)
+                    .cast(DataType::String)
+                    .str()
+                    .contains(lit(self.filter_input.as_str()), false),
+            )
+        }
+        let filtered = self
+            .df
+            .clone()
+            .lazy()
+            .filter(mask)
+            .collect()
+            .unwrap_or(self.df.clone());
+
+        self.view = if let Some(sort_col) = self.sort_column {
+            let col_name = &self.headers[sort_col];
+            let opts = SortMultipleOptions::default().with_order_descending(matches!(
+                self.sort_direction,
+                SortDirection::Descending
+            ));
+            match filtered.sort([col_name], opts) {
+                Ok(sorted) => sorted,
+                Err(_) => filtered,
+            }
+        } else {
+            filtered
+        };
     }
 
     pub fn sort_by_column(&mut self) {
@@ -134,64 +174,42 @@ impl App {
             self.sort_column = Some(current_column);
             self.sort_direction = SortDirection::Ascending;
         }
-        self.records.sort_by(|a, b| match self.sort_direction {
-            SortDirection::Ascending => a.get(current_column).cmp(&b.get(current_column)),
-            SortDirection::Descending => b.get(current_column).cmp(&a.get(current_column)),
-        });
-        if !self.filters.is_empty() || !self.filter_input.is_empty() {
-            self.update_filter();
-        }
+        let col_name = &self.headers[current_column];
+        let opts = SortMultipleOptions::default().with_order_descending(matches!(
+            self.sort_direction,
+            SortDirection::Descending
+        ));
+        self.view = match self.view.sort([col_name], opts) {
+            Ok(sorted) => sorted,
+            Err(_) => self.view.clone(),
+        };
     }
 
     pub fn compute_stats(&mut self, col: usize) -> ColumnStats {
-        let values: Vec<&String> = self
-            .records
-            .iter()
-            .filter_map(|r| r.get(col))
-            .filter(|v| !v.is_empty())
-            .collect();
+        let col_name = &self.headers[col];
+        let series = self.view.column(col_name).unwrap();
 
-        let numeric: Vec<f64> = self
-            .records
-            .iter()
-            .filter_map(|r| r.get(col))
-            .filter_map(|v| v.parse::<f64>().ok())
-            .collect();
-
-        let mean = if numeric.is_empty() {
-            None
-        } else {
-            Some(numeric.iter().sum::<f64>() / numeric.len() as f64)
-        };
+        let count = series.len();
+        let min = series
+            .min_reduce()
+            .ok()
+            .map(|s| s.value().to_string())
+            .unwrap_or_default();
+        let max = series
+            .max_reduce()
+            .ok()
+            .map(|s| s.value().to_string())
+            .unwrap_or_default();
+        let mean = series.as_series().unwrap().mean();
+        let median = series.as_series().unwrap().median();
 
         ColumnStats {
-            count: self.records.len(),
-            min: values
-                .iter()
-                .min()
-                .map(|v| v.to_string())
-                .unwrap_or_default(),
-            max: values
-                .iter()
-                .max()
-                .map(|v| v.to_string())
-                .unwrap_or_default(),
-            mean: mean,
-            median: median(numeric),
+            count,
+            min,
+            max,
+            mean,
+            median,
         }
-    }
-}
-
-fn median(mut array: Vec<f64>) -> Option<f64> {
-    if array.is_empty() {
-        return None;
-    };
-    array.sort_by(|a, b| a.total_cmp(b));
-    let middle = array.len() / 2;
-    if array.len() % 2 == 0 {
-        Some((array[middle] + array[middle - 1]) / 2.0)
-    } else {
-        Some(array[middle])
     }
 }
 
@@ -200,13 +218,27 @@ mod tests {
     use super::*;
 
     fn make_app() -> App {
-        let headers = vec!["name".to_string(), "age".to_string()];
-        let records = vec![
-            vec!["Alice".to_string(), "30".to_string()],
-            vec!["Bob".to_string(), "25".to_string()],
-            vec!["Charlie".to_string(), "35".to_string()],
-        ];
-        App::new(headers, records, "test.csv".to_string())
+        let df = df! {
+            "name" => ["Alice", "Bob", "Charlie"],
+            "age" => [30i64, 25, 35],
+        }
+        .unwrap();
+        App::new(df, "test.csv".to_string())
+    }
+
+    fn get_str(app: &App, col: &str, row: usize) -> String {
+        app.view
+            .column(col)
+            .unwrap()
+            .as_series()
+            .unwrap()
+            .cast(&DataType::String)
+            .unwrap()
+            .str()
+            .unwrap()
+            .get(row)
+            .unwrap_or("")
+            .to_string()
     }
 
     #[test]
@@ -236,9 +268,9 @@ mod tests {
     #[test]
     fn test_update_filter_finds_matches() {
         let mut app = make_app();
-        app.filters = vec![(0, "bob".to_string())];
+        app.filters = vec![(0, "Bob".to_string())];
         app.update_filter();
-        assert_eq!(app.filter_indices, vec![1]);
+        assert_eq!(app.view.height(), 1);
     }
 
     #[test]
@@ -246,9 +278,9 @@ mod tests {
         let mut app = make_app();
         app.state.select_column(Some(0));
         app.sort_by_column();
-        assert_eq!(app.records[0][0], "Alice");
-        assert_eq!(app.records[1][0], "Bob");
-        assert_eq!(app.records[2][0], "Charlie");
+        assert_eq!(get_str(&app, "name", 0), "Alice");
+        assert_eq!(get_str(&app, "name", 1), "Bob");
+        assert_eq!(get_str(&app, "name", 2), "Charlie");
     }
 
     #[test]
@@ -257,8 +289,8 @@ mod tests {
         app.state.select_column(Some(0));
         app.sort_by_column();
         app.sort_by_column();
-        assert_eq!(app.records[0][0], "Charlie");
-        assert_eq!(app.records[1][0], "Bob");
-        assert_eq!(app.records[2][0], "Alice");
+        assert_eq!(get_str(&app, "name", 0), "Charlie");
+        assert_eq!(get_str(&app, "name", 1), "Bob");
+        assert_eq!(get_str(&app, "name", 2), "Alice");
     }
 }

@@ -1,6 +1,7 @@
 use crate::app::{App, Mode};
 use crate::ui::ui;
 use crossterm::event;
+use polars::prelude::DataType;
 
 const PAGE_SCROLL_AMOUNT: u16 = 20;
 
@@ -60,15 +61,29 @@ pub fn run_app(
 }
 
 fn autofit_column(app: &mut App) {
-    if let Some(col) = app.state.selected_column() {
-        let header_width = app.headers.get(col).map_or(0, |h| h.len()) as u16;
+    if let Some(col_idx) = app.state.selected_column() {
+        let header_width = app.headers.get(col_idx).map_or(0, |h| h.len()) as u16;
+        let col_name = app.headers[col_idx].clone();
         let max_data = app
-            .records
-            .iter()
-            .map(|r| r.get(col).map_or(0, |f| f.len()))
-            .max()
-            .unwrap_or(0) as u16;
-        app.column_widths[col] = max_data.max(header_width);
+            .view
+            .column(&col_name)
+            .ok()
+            .map(|col| {
+                let str_series = col
+                    .as_series()
+                    .unwrap()
+                    .cast(&DataType::String)
+                    .unwrap();
+                str_series
+                    .str()
+                    .unwrap()
+                    .into_iter()
+                    .map(|v| v.map_or(0, |s| s.len()))
+                    .max()
+                    .unwrap_or(0) as u16
+            })
+            .unwrap_or(0);
+        app.column_widths[col_idx] = max_data.max(header_width);
     }
 }
 
@@ -138,8 +153,8 @@ fn from_filter_to_normal_mode(app: &mut App) {
 
 fn clear_filters(app: &mut App) {
     app.filter_input = String::new();
-    app.filter_indices = Vec::new();
     app.filters = Vec::new();
+    app.update_filter();
 }
 
 fn go_to_next_search_result(app: &mut App) {

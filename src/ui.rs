@@ -1,4 +1,5 @@
 use crate::app::{App, Mode, SortDirection};
+use polars::prelude::DataType;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::widgets::{Cell, Clear, Paragraph, Row, Table};
@@ -16,13 +17,27 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
             Cell::from(header.as_str())
         }
     }));
-    let rows = app
-        .records
+    let str_columns: Vec<_> = app
+        .view
+        .get_columns()
         .iter()
-        .enumerate()
-        .filter(|(i, _)| app.filter_indices.is_empty() || app.filter_indices.contains(i))
-        .map(|(_, record)| Row::new(record.iter().map(|field| Cell::from(field.as_str()))))
-        .collect::<Vec<Row>>();
+        .map(|col| {
+            col.as_series()
+                .unwrap()
+                .cast(&DataType::String)
+                .unwrap()
+        })
+        .collect();
+    let rows: Vec<Row> = (0..app.view.height())
+        .map(|i| {
+            Row::new(
+                str_columns
+                    .iter()
+                    .map(|s| Cell::from(s.str().unwrap().get(i).unwrap_or("").to_string()))
+                    .collect::<Vec<Cell>>(),
+            )
+        })
+        .collect();
     let widths: Vec<Constraint> = app
         .column_widths
         .iter()
@@ -89,15 +104,20 @@ fn get_bar(app: &App) -> String {
                     app.search_results.len(),
                     app.search_query
                 )
-            } else if !app.filter_indices.is_empty() {
-                let filter_summary = app.filters.iter().map(|(col, q)| {
-                    format!("[{}: {}]", app.headers.get(*col).map_or("?", |h| h), q)
-                }).collect::<Vec<_>>().join(" ");
+            } else if !app.filters.is_empty() {
+                let filter_summary = app
+                    .filters
+                    .iter()
+                    .map(|(col, q)| {
+                        format!("[{}: {}]", app.headers.get(*col).map_or("?", |h| h), q)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 format!(
                     " {} Row {}/{} | Col {}/{} | {} ",
                     filter_summary,
                     app.state.selected().map_or(0, |i| i + 1),
-                    app.filter_indices.len(),
+                    app.view.height(),
                     app.state.selected_column().map_or(0, |i| i + 1),
                     app.headers.len(),
                     app.file_path
@@ -106,7 +126,7 @@ fn get_bar(app: &App) -> String {
                 format!(
                     " Row {}/{} | Col {}/{} | {} ",
                     app.state.selected().map_or(0, |i| i + 1),
-                    app.records.len(),
+                    app.view.height(),
                     app.state.selected_column().map_or(0, |i| i + 1),
                     app.headers.len(),
                     app.file_path
