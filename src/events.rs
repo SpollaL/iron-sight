@@ -53,6 +53,10 @@ pub fn run_app(
                         app.plot_y_col = app.state.selected_column();
                         app.mode = Mode::PlotPickX;
                     }
+                    event::KeyCode::Char('i') if !app.df.is_empty() => {
+                        app.build_columns_profile();
+                        app.mode = Mode::ColumnsView;
+                    }
                     _ => {}
                 },
                 Mode::Search => match key.code {
@@ -88,6 +92,30 @@ pub fn run_app(
                     }
                     event::KeyCode::Esc | event::KeyCode::Char('p') => {
                         app.mode = Mode::Normal
+                    }
+                    event::KeyCode::Char('q') => app.should_quit = true,
+                    _ => {}
+                },
+                Mode::ColumnsView => match key.code {
+                    event::KeyCode::Down | event::KeyCode::Char('j') => {
+                        app.columns_view_state.select_next()
+                    }
+                    event::KeyCode::Up | event::KeyCode::Char('k') => {
+                        app.columns_view_state.select_previous()
+                    }
+                    event::KeyCode::Char('g') | event::KeyCode::Home => {
+                        app.columns_view_state.select_first()
+                    }
+                    event::KeyCode::Char('G') | event::KeyCode::End => {
+                        app.columns_view_state.select_last()
+                    }
+                    event::KeyCode::Enter => {
+                        let col = app.columns_view_state.selected().unwrap_or(0);
+                        app.state.select_column(Some(col));
+                        app.mode = Mode::Normal;
+                    }
+                    event::KeyCode::Esc | event::KeyCode::Char('i') => {
+                        app.mode = Mode::Normal;
                     }
                     event::KeyCode::Char('q') => app.should_quit = true,
                     _ => {}

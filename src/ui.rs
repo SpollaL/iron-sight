@@ -1,4 +1,4 @@
-use crate::app::{AggFunc, App, Mode, PlotType};
+use crate::app::{AggFunc, App, ColumnProfile, Mode, PlotType};
 use catppuccin::PALETTE;
 use polars::prelude::{DataType, Series};
 use ratatui::layout::{Constraint, Layout, Position, Rect};
@@ -21,6 +21,11 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
 
     if matches!(app.mode, Mode::Plot) {
         render_plot(frame, app, m);
+        return;
+    }
+
+    if matches!(app.mode, Mode::ColumnsView) {
+        render_columns_view(frame, app, m);
         return;
     }
 
@@ -173,6 +178,14 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                 app.plot_type_label()
             ),
             Style::default().bg(c(m.surface0)).fg(c(m.subtext1)),
+        ),
+        Mode::ColumnsView => (
+            " Column Inspector  |  j/k navigate  |  Enter jump to column  |  Esc / i close "
+                .to_string(),
+            Style::default()
+                .bg(c(m.green))
+                .fg(c(m.base))
+                .add_modifier(Modifier::BOLD),
         ),
         Mode::Search => (
             format!(" /{}_ ", app.search_query),
@@ -342,6 +355,7 @@ fn help_text(m: &catppuccin::FlavorColors) -> Text<'static> {
         key("Esc / p", "Close chart"),
         Line::raw(""),
         section("Other"),
+        key("i", "Column Inspector (schema + stats)"),
         key("_", "Autofit column width"),
         key("=", "Autofit all columns"),
         key("S", "Toggle column stats popup"),
@@ -349,6 +363,95 @@ fn help_text(m: &catppuccin::FlavorColors) -> Text<'static> {
         key("q", "Quit"),
         Line::raw(""),
     ])
+}
+
+fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorColors) {
+    let full_area = frame.area();
+    frame.render_widget(Clear, full_area);
+
+    let chunks = Layout::default()
+        .direction(ratatui::layout::Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(full_area);
+
+    let (bar_text, bar_style) = get_bar(app, m);
+    frame.render_widget(Paragraph::new(bar_text).style(bar_style), chunks[1]);
+
+    let header = Row::new([
+        Cell::from("Column").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
+        Cell::from("Type").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
+        Cell::from("Count").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
+        Cell::from("Nulls").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
+        Cell::from("Unique").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
+        Cell::from("Min").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
+        Cell::from("Max").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
+        Cell::from("Mean").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
+        Cell::from("Median").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
+    ])
+    .style(Style::default().bg(c(m.surface0)))
+    .bottom_margin(1);
+
+    let rows: Vec<Row> = app
+        .columns_profile
+        .iter()
+        .enumerate()
+        .map(|(i, p)| profile_row(p, i, m))
+        .collect();
+
+    let widths = [
+        Constraint::Min(16),
+        Constraint::Length(12),
+        Constraint::Length(8),
+        Constraint::Length(8),
+        Constraint::Length(9),
+        Constraint::Length(14),
+        Constraint::Length(14),
+        Constraint::Length(10),
+        Constraint::Length(10),
+    ];
+
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(
+            Block::default()
+                .title(format!(" Column Inspector — {} ", app.file_path))
+                .title_style(Style::default().fg(c(m.green)).add_modifier(Modifier::BOLD))
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(c(m.overlay0)))
+                .style(Style::default().bg(c(m.base))),
+        )
+        .row_highlight_style(
+            Style::default()
+                .bg(c(m.green))
+                .fg(c(m.base))
+                .add_modifier(Modifier::BOLD),
+        );
+
+    frame.render_stateful_widget(table, chunks[0], &mut app.columns_view_state);
+}
+
+fn profile_row<'a>(p: &'a ColumnProfile, idx: usize, m: &catppuccin::FlavorColors) -> Row<'a> {
+    let bg = if idx % 2 == 0 { c(m.base) } else { c(m.mantle) };
+    let null_style = if p.null_count > 0 {
+        Style::default().fg(c(m.red))
+    } else {
+        Style::default().fg(c(m.text))
+    };
+    Row::new([
+        Cell::from(p.name.clone()).style(Style::default().fg(c(m.text))),
+        Cell::from(p.dtype.clone()).style(Style::default().fg(c(m.subtext1))),
+        Cell::from(p.count.to_string()).style(Style::default().fg(c(m.text))),
+        Cell::from(p.null_count.to_string()).style(null_style),
+        Cell::from(p.unique.to_string()).style(Style::default().fg(c(m.text))),
+        Cell::from(p.min.clone()).style(Style::default().fg(c(m.subtext1))),
+        Cell::from(p.max.clone()).style(Style::default().fg(c(m.subtext1))),
+        Cell::from(p.mean.map_or("—".to_string(), |v| format!("{:.2}", v)))
+            .style(Style::default().fg(c(m.blue))),
+        Cell::from(p.median.map_or("—".to_string(), |v| format!("{:.2}", v)))
+            .style(Style::default().fg(c(m.blue))),
+    ])
+    .style(Style::default().bg(bg))
 }
 
 fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {

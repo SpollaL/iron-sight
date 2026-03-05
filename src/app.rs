@@ -2,6 +2,18 @@ use polars::prelude::*;
 use ratatui::widgets::TableState;
 use std::collections::HashMap;
 
+pub struct ColumnProfile {
+    pub name: String,
+    pub dtype: String,
+    pub count: usize,
+    pub null_count: usize,
+    pub unique: usize,
+    pub min: String,
+    pub max: String,
+    pub mean: Option<f64>,
+    pub median: Option<f64>,
+}
+
 const DEFAULT_COLUMN_WIDTH: u16 = 15;
 
 pub struct Config {
@@ -26,6 +38,7 @@ pub enum Mode {
     Filter,
     PlotPickX,
     Plot,
+    ColumnsView,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,6 +97,8 @@ pub struct App {
     pub plot_y_col: Option<usize>,
     pub plot_x_col: Option<usize>,
     pub plot_type: PlotType,
+    pub columns_profile: Vec<ColumnProfile>,
+    pub columns_view_state: TableState,
 }
 
 impl App {
@@ -121,6 +136,8 @@ impl App {
             plot_y_col: None,
             plot_x_col: None,
             plot_type: PlotType::Line,
+            columns_profile: Vec::new(),
+            columns_view_state: TableState::default(),
         };
         if !app.df.is_empty() {
             app.state.select(Some(0));
@@ -409,6 +426,38 @@ impl App {
             self.state.select(Some(0));
             self.state.select_column(Some(0));
         }
+    }
+
+    pub fn build_columns_profile(&mut self) {
+        self.columns_profile = self
+            .view
+            .get_columns()
+            .iter()
+            .map(|col| {
+                let name = col.name().to_string();
+                let dtype = col.dtype().to_string();
+                let count = col.len();
+                let null_count = col.null_count();
+                let unique = col
+                    .as_series()
+                    .and_then(|s| s.n_unique().ok())
+                    .unwrap_or(0);
+                let min = col
+                    .min_reduce()
+                    .ok()
+                    .map(|s| s.value().to_string())
+                    .unwrap_or_default();
+                let max = col
+                    .max_reduce()
+                    .ok()
+                    .map(|s| s.value().to_string())
+                    .unwrap_or_default();
+                let mean = col.as_series().and_then(|s| s.mean());
+                let median = col.as_series().and_then(|s| s.median());
+                ColumnProfile { name, dtype, count, null_count, unique, min, max, mean, median }
+            })
+            .collect();
+        self.columns_view_state.select(Some(0));
     }
 
     pub fn plot_type_label(&self) -> &str {
