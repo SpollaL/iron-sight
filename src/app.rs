@@ -103,6 +103,46 @@ pub struct App {
     pub view_offset: usize,
 }
 
+/// Build a polars filter expression for a column and query string.
+/// Supports comparison operators (>, <, >=, <=, =, !=) for numeric values.
+/// Falls back to case-insensitive substring matching for everything else.
+fn build_filter_expr(col_name: &str, query: &str) -> Expr {
+    let q = query.trim();
+    let (op, rest) = if let Some(r) = q.strip_prefix(">=") {
+        (">=", r.trim())
+    } else if let Some(r) = q.strip_prefix("<=") {
+        ("<=", r.trim())
+    } else if let Some(r) = q.strip_prefix("!=") {
+        ("!=", r.trim())
+    } else if let Some(r) = q.strip_prefix('>') {
+        (">", r.trim())
+    } else if let Some(r) = q.strip_prefix('<') {
+        ("<", r.trim())
+    } else if let Some(r) = q.strip_prefix('=') {
+        ("=", r.trim())
+    } else {
+        ("", q)
+    };
+
+    if !op.is_empty() {
+        if let Ok(value) = rest.parse::<f64>() {
+            return match op {
+                ">=" => col(col_name).gt_eq(lit(value)),
+                "<=" => col(col_name).lt_eq(lit(value)),
+                "!=" => col(col_name).neq(lit(value)),
+                ">" => col(col_name).gt(lit(value)),
+                "<" => col(col_name).lt(lit(value)),
+                _ => col(col_name).eq(lit(value)),
+            };
+        }
+    }
+
+    col(col_name)
+        .cast(DataType::String)
+        .str()
+        .contains(lit(query), false)
+}
+
 impl App {
     pub fn new(df: DataFrame, file_path: String) -> App {
         let headers: Vec<String> = df
@@ -184,21 +224,11 @@ impl App {
         let mut mask = lit(true);
         for (colidx, query) in &self.filters {
             let col_name = &self.headers[*colidx];
-            mask = mask.and(
-                col(col_name)
-                    .cast(DataType::String)
-                    .str()
-                    .contains(lit(query.as_str()), false),
-            );
+            mask = mask.and(build_filter_expr(col_name, query));
         }
         if !self.filter_input.is_empty() {
             let col_name = &self.headers[self.state.selected_column().unwrap_or(0)];
-            mask = mask.and(
-                col(col_name)
-                    .cast(DataType::String)
-                    .str()
-                    .contains(lit(self.filter_input.as_str()), false),
-            )
+            mask = mask.and(build_filter_expr(col_name, &self.filter_input));
         }
         let filtered = self
             .df

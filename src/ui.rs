@@ -223,7 +223,7 @@ fn get_bar(app: &App, m: &catppuccin::FlavorColors) -> (String, Style) {
                 .add_modifier(Modifier::BOLD),
         ),
         Mode::Filter => (
-            format!(" f {}_ ", app.filter_input),
+            format!(" f {}_ (>,<,>=,<=,!=,= for numbers) ", app.filter_input),
             Style::default()
                 .bg(c(m.sapphire))
                 .fg(c(m.base))
@@ -366,6 +366,7 @@ fn help_text(m: &catppuccin::FlavorColors) -> Text<'static> {
         key("Enter", "Apply filter"),
         key("F", "Clear all filters"),
         key("Esc", "Discard input"),
+        key("", "  >, <, >=, <=, !=, = for numeric columns"),
         Line::raw(""),
         section("Sort"),
         key("s", "Sort by column (toggles asc / desc)"),
