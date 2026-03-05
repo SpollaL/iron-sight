@@ -655,6 +655,80 @@ mod tests {
 }
 
 #[cfg(test)]
+mod columns_view_tests {
+    use super::*;
+
+    #[test]
+    fn test_build_columns_profile_numeric() {
+        let df = df! {
+            "val" => [1i64, 2, 3],
+        }
+        .unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+        app.build_columns_profile();
+        let p = &app.columns_profile[0];
+        assert_eq!(p.name, "val");
+        assert_eq!(p.count, 3);
+        assert_eq!(p.null_count, 0);
+        assert!(p.mean.is_some());
+        assert!(p.median.is_some());
+    }
+
+    #[test]
+    fn test_build_columns_profile_string_no_stats() {
+        let df = df! {
+            "name" => ["a", "b", "c"],
+        }
+        .unwrap();
+        let mut app = App::new(df, "test.csv".to_string());
+        app.build_columns_profile();
+        let p = &app.columns_profile[0];
+        assert!(p.mean.is_none());
+        assert!(p.median.is_none());
+    }
+}
+
+#[cfg(test)]
+mod groupby_tests {
+    use super::*;
+
+    fn make_app() -> App {
+        let df = df! {
+            "dept" => ["eng", "eng", "hr"],
+            "sal"  => [100i64, 200, 150],
+        }
+        .unwrap();
+        App::new(df, "test.csv".to_string())
+    }
+
+    #[test]
+    fn test_apply_groupby_aggregates() {
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.toggle_groupby_key(); // dept as key
+        app.state.select_column(Some(1));
+        app.cycle_groupby_agg(); // sal → Sum
+        app.apply_groupby();
+        assert!(app.groupby_active);
+        assert_eq!(app.view.height(), 2); // eng, hr
+    }
+
+    #[test]
+    fn test_clear_groupby_restores_view() {
+        let mut app = make_app();
+        app.state.select_column(Some(0));
+        app.toggle_groupby_key();
+        app.state.select_column(Some(1));
+        app.cycle_groupby_agg();
+        app.apply_groupby();
+        app.clear_groupby();
+        assert!(!app.groupby_active);
+        assert_eq!(app.view.height(), 3);
+        assert_eq!(app.headers[0], "dept");
+    }
+}
+
+#[cfg(test)]
 mod plot_tests {
     use super::*;
 
