@@ -91,9 +91,7 @@ pub fn run_app(
                             PlotType::Histogram => PlotType::Line,
                         };
                     }
-                    event::KeyCode::Esc | event::KeyCode::Char('p') => {
-                        app.mode = Mode::Normal
-                    }
+                    event::KeyCode::Esc | event::KeyCode::Char('p') => app.mode = Mode::Normal,
                     event::KeyCode::Char('q') => app.should_quit = true,
                     _ => {}
                 },
