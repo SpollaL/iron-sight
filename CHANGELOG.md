@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-03-05
+
+### Added
+- **Unique values popup** (`u`) — searchable overlay showing all distinct values for the current column sorted by frequency; press `Enter` to instantly apply as a filter
+- **Comparison filters** — filter mode now accepts `>`, `<`, `>=`, `<=`, `=`, `!=` for numeric columns (e.g. `> 30`); `=` and `!=` also work for exact string matching
+
+### Fixed
+- Plot no longer fills the screen with solid dots on large datasets — data is downsampled to the chart width before rendering
+
 ## [0.2.0] - 2026-03-05
 
 ### Added

@@ -11,7 +11,8 @@ A terminal CSV/Parquet viewer with vim-style navigation, built with Rust and rat
 
 - Vim-style navigation (`hjkl`, `g`/`G`, `PageUp`/`PageDown`)
 - Search within a column (`/`, `n`/`N`)
-- Multi-column filtering (`f`, `F`)
+- Multi-column filtering with comparison operators — `> 30`, `= Engineering`, `!= 0` (`f`, `F`)
+- Unique values popup — browse and filter by distinct values instantly (`u`)
 - Sort by any column (`s`)
 - Group-by with per-column aggregations (`b`, `a`, `B`)
 - Column plot — line, bar, or histogram chart (`p`, `t`)
@@ -76,6 +77,19 @@ cargo run -- <path-to-file.parquet>
 | `Enter` | Confirm filter and return to normal mode |
 | `F` | Clear all filters |
 | `Esc` | Discard input |
+
+Supports comparison operators for numeric columns: `> 30`, `< 100`, `>= 0`, `<= 50`, `= 42`, `!= 0`.
+Use `= text` or `!= text` for exact string matching. Plain text falls back to substring search.
+
+### Unique Values
+
+| Key | Action |
+|-----|--------|
+| `u` | Open unique values popup for current column (sorted by frequency) |
+| type | Search / filter the list live |
+| `j` / `k` | Navigate the list |
+| `Enter` | Apply selected value as a filter and close |
+| `Esc` | Close without filtering |
 
 ### Sort
 
