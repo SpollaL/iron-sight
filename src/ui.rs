@@ -518,6 +518,16 @@ fn profile_row<'a>(p: &'a ColumnProfile, idx: usize, m: &catppuccin::FlavorColor
     .style(Style::default().bg(bg))
 }
 
+fn downsample(data: Vec<(f64, f64)>, max_points: usize) -> Vec<(f64, f64)> {
+    if data.len() <= max_points {
+        return data;
+    }
+    let step = data.len() as f64 / max_points as f64;
+    (0..max_points)
+        .map(|i| data[(i as f64 * step) as usize])
+        .collect()
+}
+
 fn compute_histogram(app: &App, y_idx: usize) -> Vec<(f64, f64)> {
     let col = match app.view.column(&app.headers[y_idx]) {
         Ok(c) => c,
@@ -653,7 +663,10 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
         return;
     }
 
-    let (data, x_is_categorical) = extract_plot_data(app, x_idx, y_idx);
+    let (raw_data, x_is_categorical) = extract_plot_data(app, x_idx, y_idx);
+    // Downsample to ~2× chart width — more points than that are invisible at terminal resolution.
+    let max_points = (full_area.width as usize * 2).max(200);
+    let data = downsample(raw_data, max_points);
 
     // Collect all x labels now so we know the max length for layout.
     let x_labels = if x_is_categorical {
