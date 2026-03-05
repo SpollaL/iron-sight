@@ -2,6 +2,9 @@
 
 A terminal CSV/Parquet viewer with vim-style navigation, built with Rust and ratatui. Themed with [Catppuccin Mocha](https://github.com/catppuccin/catppuccin).
 
+[![CI](https://github.com/SpollaL/iron-sight/actions/workflows/ci.yml/badge.svg)](https://github.com/SpollaL/iron-sight/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 ## Features
 
 - Vim-style navigation (`hjkl`, `g`/`G`, `PageUp`/`PageDown`)
@@ -9,24 +12,26 @@ A terminal CSV/Parquet viewer with vim-style navigation, built with Rust and rat
 - Multi-column filtering (`f`, `F`)
 - Sort by any column (`s`)
 - Group-by with per-column aggregations (`b`, `a`, `B`)
-- Column plot — line or bar chart, with rotated labels for string/date X axes (`p`, `t`)
+- Column plot — line, bar, or histogram chart (`p`, `t`)
+- Column Inspector — schema and stats for every column at a glance (`i`)
 - Column stats popup (`S`)
 - In-app help popup (`?`)
 - Catppuccin Mocha color theme with zebra-striped rows and mode-aware status bar
 - Supports CSV and Parquet files
+- Viewport-windowed rendering — stays fast on large files
 
 ## Install
 
 ### Pre-built binaries (recommended)
 
-Download the latest binary for your platform from the [GitHub Releases](https://github.com/Spollal/iron-sight/releases) page.
+Download the latest binary for your platform from the [GitHub Releases](https://github.com/SpollaL/iron-sight/releases) page.
 
 ### Build from source
 
 Requires Rust 1.75 or higher.
 
 ```
-cargo install --git https://github.com/Spollal/iron-sight
+cargo install --git https://github.com/SpollaL/iron-sight
 ```
 
 Or clone and run locally:
@@ -67,8 +72,8 @@ cargo run -- <path-to-file.parquet>
 |-----|--------|
 | `f` | Enter filter mode (filters rows by current column) |
 | `Enter` | Confirm filter and return to normal mode |
-| `F` | Clear active filter |
-| `Esc` | Exit filter and clear results |
+| `F` | Clear all filters |
+| `Esc` | Discard input |
 
 ### Sort
 
@@ -92,11 +97,22 @@ cargo run -- <path-to-file.parquet>
 | `h` / `←` / `l` / `→` | Pick-X | Navigate to the X column |
 | `Enter` | Pick-X | Confirm X column and show chart |
 | `Esc` | Pick-X | Cancel and return to normal mode |
-| `t` | Plot | Toggle between line and bar chart |
+| `t` | Plot | Cycle chart type (line → bar → histogram) |
 | `Esc` / `p` | Plot | Close chart and return to normal mode |
 | `q` | Plot | Quit |
 
 Numeric X columns are plotted directly. String or date X columns use row indices as data points and render the actual values as rotated (vertical) labels below the chart — all labels are shown when they fit, otherwise they are sampled evenly.
+
+For histogram, the Y column is binned automatically — no X column selection needed.
+
+### Column Inspector
+
+| Key | Action |
+|-----|--------|
+| `i` | Open Column Inspector (type, count, nulls, unique, min, max, mean, median) |
+| `j` / `k` | Navigate rows |
+| `Enter` | Jump to the selected column and return to data view |
+| `Esc` / `i` | Close and return to data view |
 
 ### Column Stats
 
@@ -108,6 +124,9 @@ Numeric X columns are plotted directly. String or date X columns use row indices
 
 | Key | Action |
 |-----|--------|
+| `i` | Open Column Inspector |
 | `_` | Autofit current column width |
+| `=` | Autofit all columns |
+| `S` | Toggle column stats popup |
 | `?` | Toggle help popup |
 | `q` | Quit |

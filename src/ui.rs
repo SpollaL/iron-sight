@@ -5,8 +5,9 @@ use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Axis, Block, BorderType, Borders, Cell, Chart, Clear, Dataset, GraphType,
-    Paragraph, Row, Table};
+use ratatui::widgets::{
+    Axis, Block, BorderType, Borders, Cell, Chart, Clear, Dataset, GraphType, Paragraph, Row, Table,
+};
 use ratatui::Frame;
 
 const Y_AXIS_PADDING: f64 = 0.05;
@@ -46,7 +47,9 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
         app.view_offset = selected.saturating_sub(page_h - 1);
     }
     // Don't let the offset run past the last page.
-    app.view_offset = app.view_offset.min(total_rows.saturating_sub(page_h.max(1)));
+    app.view_offset = app
+        .view_offset
+        .min(total_rows.saturating_sub(page_h.max(1)));
 
     let slice_len = page_h.min(total_rows.saturating_sub(app.view_offset));
     let visible_view = app.view.slice(app.view_offset as i64, slice_len);
@@ -69,7 +72,11 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
     let rows: Vec<Row> = (0..slice_len)
         .map(|i| {
             let abs_row = app.view_offset + i;
-            let bg = if abs_row % 2 == 0 { c(m.base) } else { c(m.mantle) };
+            let bg = if abs_row % 2 == 0 {
+                c(m.base)
+            } else {
+                c(m.mantle)
+            };
             Row::new(
                 str_columns
                     .iter()
@@ -399,15 +406,51 @@ fn render_columns_view(frame: &mut Frame, app: &mut App, m: &catppuccin::FlavorC
     frame.render_widget(Paragraph::new(bar_text).style(bar_style), chunks[1]);
 
     let header = Row::new([
-        Cell::from("Column").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
-        Cell::from("Type").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
-        Cell::from("Count").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
-        Cell::from("Nulls").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
-        Cell::from("Unique").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
-        Cell::from("Min").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
-        Cell::from("Max").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
-        Cell::from("Mean").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
-        Cell::from("Median").style(Style::default().fg(c(m.lavender)).add_modifier(Modifier::BOLD)),
+        Cell::from("Column").style(
+            Style::default()
+                .fg(c(m.lavender))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Type").style(
+            Style::default()
+                .fg(c(m.lavender))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Count").style(
+            Style::default()
+                .fg(c(m.lavender))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Nulls").style(
+            Style::default()
+                .fg(c(m.lavender))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Unique").style(
+            Style::default()
+                .fg(c(m.lavender))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Min").style(
+            Style::default()
+                .fg(c(m.lavender))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Max").style(
+            Style::default()
+                .fg(c(m.lavender))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Mean").style(
+            Style::default()
+                .fg(c(m.lavender))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("Median").style(
+            Style::default()
+                .fg(c(m.lavender))
+                .add_modifier(Modifier::BOLD),
+        ),
     ])
     .style(Style::default().bg(c(m.surface0)))
     .bottom_margin(1);
@@ -526,9 +569,8 @@ fn render_histogram(
     let chart_area = zones[0];
     let bar_area = zones[1];
 
-    let bar_text = format!(
-        " Histogram chart  |  t cycle line/bar/histogram  |  Esc / p to close "
-    );
+    let bar_text =
+        " Histogram chart  |  t cycle line/bar/histogram  |  Esc / p to close ".to_string();
     frame.render_widget(
         Paragraph::new(bar_text).style(Style::default().bg(c(m.surface0)).fg(c(m.subtext1))),
         bar_area,
@@ -536,18 +578,16 @@ fn render_histogram(
 
     let data = compute_histogram(app, y_idx);
     if data.is_empty() {
-        let msg = Paragraph::new(
-            " No data to plot. Column must be numeric (int or float). ",
-        )
-        .block(
-            Block::default()
-                .title(" Plot Error ")
-                .title_style(Style::default().fg(c(m.red)).add_modifier(Modifier::BOLD))
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(c(m.red))),
-        )
-        .style(Style::default().bg(c(m.base)).fg(c(m.text)));
+        let msg = Paragraph::new(" No data to plot. Column must be numeric (int or float). ")
+            .block(
+                Block::default()
+                    .title(" Plot Error ")
+                    .title_style(Style::default().fg(c(m.red)).add_modifier(Modifier::BOLD))
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(c(m.red))),
+            )
+            .style(Style::default().bg(c(m.base)).fg(c(m.text)));
         frame.render_widget(msg, chart_area);
         return;
     }
@@ -621,7 +661,11 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
     } else {
         vec![]
     };
-    let max_label_len = x_labels.iter().map(|s| s.chars().count()).max().unwrap_or(0);
+    let max_label_len = x_labels
+        .iter()
+        .map(|s| s.chars().count())
+        .max()
+        .unwrap_or(0);
     // Cap so labels never consume more than 1/3 of the screen.
     let label_height = (max_label_len as u16).min(full_area.height / 3);
 
@@ -722,11 +766,7 @@ fn render_plot(frame: &mut Frame, app: &App, m: &catppuccin::FlavorColors) {
 }
 
 #[cfg(test)]
-pub fn extract_plot_data_pub(
-    app: &App,
-    x_idx: usize,
-    y_idx: usize,
-) -> (Vec<(f64, f64)>, bool) {
+pub fn extract_plot_data_pub(app: &App, x_idx: usize, y_idx: usize) -> (Vec<(f64, f64)>, bool) {
     extract_plot_data(app, x_idx, y_idx)
 }
 
@@ -811,7 +851,11 @@ fn render_vertical_x_labels(
         let n = n_slots;
         (0..n)
             .map(|i| {
-                let idx = if n <= 1 { 0 } else { i * (labels.len() - 1) / (n - 1) };
+                let idx = if n <= 1 {
+                    0
+                } else {
+                    i * (labels.len() - 1) / (n - 1)
+                };
                 labels[idx].as_str()
             })
             .collect()
@@ -852,12 +896,12 @@ fn extract_plot_data(app: &App, x_idx: usize, y_idx: usize) -> (Vec<(f64, f64)>,
         .view
         .column(&app.headers[x_idx])
         .ok()
-        .and_then(|c| series_to_f64(c));
+        .and_then(series_to_f64);
     let y_series = app
         .view
         .column(&app.headers[y_idx])
         .ok()
-        .and_then(|c| series_to_f64(c));
+        .and_then(series_to_f64);
 
     match (x_series, y_series) {
         (Some(xs), Some(ys)) => {
@@ -865,7 +909,7 @@ fn extract_plot_data(app: &App, x_idx: usize, y_idx: usize) -> (Vec<(f64, f64)>,
             let yca = ys.f64().unwrap();
             let points = xca
                 .into_iter()
-                .zip(yca.into_iter())
+                .zip(yca)
                 .filter_map(|(x, y)| Some((x?, y?)))
                 .collect();
             (points, false)

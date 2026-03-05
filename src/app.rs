@@ -113,9 +113,9 @@ impl App {
         let column_count = headers.len();
         let view = df.clone();
         let mut app = App {
-            df: df,
-            view: view,
-            headers: headers,
+            df,
+            view,
+            headers,
             state: TableState::default(),
             should_quit: false,
             file_path,
@@ -263,7 +263,7 @@ impl App {
                         .str()
                         .ok()?
                         .into_iter()
-                        .filter_map(|v| v)
+                        .flatten()
                         .map(|s: &str| s.chars().count())
                         .max()
                         .map(|n| n as u16);
@@ -350,7 +350,13 @@ impl App {
             .as_series()
             .map(|s| (s.mean(), s.median()))
             .unwrap_or((None, None));
-        ColumnStats { count, min, max, mean, median }
+        ColumnStats {
+            count,
+            min,
+            max,
+            mean,
+            median,
+        }
     }
 
     pub fn toggle_groupby_key(&mut self) {
@@ -377,8 +383,12 @@ impl App {
             Some(AggFunc::Max) => None,
         };
         match next {
-            Some(f) => { self.groupby_aggs.insert(col, f); }
-            None => { self.groupby_aggs.remove(&col); }
+            Some(f) => {
+                self.groupby_aggs.insert(col, f);
+            }
+            None => {
+                self.groupby_aggs.remove(&col);
+            }
         };
     }
     pub fn apply_groupby(&mut self) {
@@ -396,11 +406,11 @@ impl App {
             .map(|(i, func)| {
                 let name = &self.headers[*i];
                 match func {
-                    AggFunc::Sum => col(name).sum().alias(&format!("{}_sum", name)),
-                    AggFunc::Mean => col(name).mean().alias(&format!("{}_mean", name)),
-                    AggFunc::Count => col(name).count().alias(&format!("{}_count", name)),
-                    AggFunc::Min => col(name).min().alias(&format!("{}_min", name)),
-                    AggFunc::Max => col(name).max().alias(&format!("{}_max", name)),
+                    AggFunc::Sum => col(name).sum().alias(format!("{}_sum", name)),
+                    AggFunc::Mean => col(name).mean().alias(format!("{}_mean", name)),
+                    AggFunc::Count => col(name).count().alias(format!("{}_count", name)),
+                    AggFunc::Min => col(name).min().alias(format!("{}_min", name)),
+                    AggFunc::Max => col(name).max().alias(format!("{}_max", name)),
                 }
             })
             .collect();
@@ -443,10 +453,7 @@ impl App {
                 let dtype = col.dtype().to_string();
                 let count = col.len();
                 let null_count = col.null_count();
-                let unique = col
-                    .as_series()
-                    .and_then(|s| s.n_unique().ok())
-                    .unwrap_or(0);
+                let unique = col.as_series().and_then(|s| s.n_unique().ok()).unwrap_or(0);
                 let min = col
                     .min_reduce()
                     .ok()
@@ -459,7 +466,17 @@ impl App {
                     .unwrap_or_default();
                 let mean = col.as_series().and_then(|s| s.mean());
                 let median = col.as_series().and_then(|s| s.median());
-                ColumnProfile { name, dtype, count, null_count, unique, min, max, mean, median }
+                ColumnProfile {
+                    name,
+                    dtype,
+                    count,
+                    null_count,
+                    unique,
+                    min,
+                    max,
+                    mean,
+                    median,
+                }
             })
             .collect();
         self.columns_view_state.select(Some(0));
@@ -744,7 +761,8 @@ mod plot_tests {
         let df = df! {
             "x" => [1i32, 2i32, 3i32],
             "y" => [10i32, 20i32, 30i32],
-        }.unwrap();
+        }
+        .unwrap();
         let app = App::new(df, "test.csv".to_string());
         let (data, x_is_categorical) = crate::ui::extract_plot_data_pub(&app, 0, 1);
         assert!(!data.is_empty(), "both numeric: data should not be empty");
@@ -758,7 +776,8 @@ mod plot_tests {
         let df = df! {
             "name" => ["alpha", "beta", "gamma"],
             "qty"  => [10i32, 20i32, 30i32],
-        }.unwrap();
+        }
+        .unwrap();
         let app = App::new(df, "test.csv".to_string());
         let (data, x_is_categorical) = crate::ui::extract_plot_data_pub(&app, 0, 1);
         assert!(!data.is_empty(), "string x: should use row index");
